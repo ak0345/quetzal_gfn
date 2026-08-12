@@ -1,0 +1,66 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-osim-base-rtb-replay_off-b10/checkpoints/last.ckpt",
+  "name": "sweep-osim-base-rtb-replay_off-b10",
+  "seed": 0,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "guacamol",
+  "reward_smiles": "hard_osimertinib",
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4632,
+    "parse_rate": 0.9264,
+    "n_parse_fail": 368,
+    "uniqueness": 0.998272884283247,
+    "log_reward_mean": -2.945442903120978,
+    "log_reward_top1": -0.2066696435213089,
+    "log_reward_top10": -0.23415322452783585,
+    "log_reward_top100": -0.281616585701704,
+    "atom_stability": 0.8595697062913876,
+    "mol_stability": 0.029
+  },
+  "base": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4630,
+    "parse_rate": 0.926,
+    "n_parse_fail": 370,
+    "uniqueness": 0.998488120950324,
+    "log_reward_mean": -3.09178826821803,
+    "log_reward_top1": -0.20613716542720795,
+    "log_reward_top10": -0.23036549985408783,
+    "log_reward_top100": -0.27804466247558596,
+    "atom_stability": 0.8516210422476429,
+    "mol_stability": 0.0266
+  },
+  "fcd": {
+    "guided_vs_base": 0.9271600991296935,
+    "guided_vs_ref": 3.8345601542977477,
+    "base_vs_ref": 4.467881661300638
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 15.270634529188259,
+      "base_vs_ref": 15.415153413822901
+    },
+    "logP": {
+      "guided_vs_ref": 0.32022792883247,
+      "base_vs_ref": 0.36255773327429813
+    },
+    "TPSA": {
+      "guided_vs_ref": 2.92630048013817,
+      "base_vs_ref": 4.187630492440608
+    },
+    "n_heavy": {
+      "guided_vs_ref": 0.9384286701208984,
+      "base_vs_ref": 1.3089550755939523
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.19331088082901554,
+      "base_vs_ref": 0.19747084233261336
+    }
+  },
+  "top10_delta_guided_minus_base": -0.003787724673748022
+}

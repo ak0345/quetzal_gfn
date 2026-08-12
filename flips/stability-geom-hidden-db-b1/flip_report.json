@@ -1,0 +1,54 @@
+{
+  "ckpt": "logs/quetzal-gfn/stability-geom-hidden-db-b1/checkpoints/last.ckpt",
+  "guide_type": "HiddenGuide",
+  "reward": "atom_stability",
+  "reward_smiles": null,
+  "guide_source": "ema",
+  "n_traj": 400,
+  "flip_temp1.0": {
+    "delivered_frac": 1.0,
+    "argmax_flip_rate": 0.00783202799533411,
+    "sample_flip_rate": 0.0071654724212631225,
+    "mean_total_variation": 0.005557280928179074,
+    "mean_KL": 0.029524125919580823,
+    "mean_prior_top1_gap": 16.332987967089984,
+    "flip_rate_high_gap": 0.0015392903871315324,
+    "flip_rate_low_gap": 0.021756487025948103,
+    "frac_states_high_gap": 0.7217130478253624,
+    "flip_rate_first8_positions": [
+      0.035,
+      0.05,
+      0.035,
+      0.0125,
+      0.01,
+      0.0075,
+      0.005,
+      0.0025
+    ],
+    "n_states": 18003,
+    "temp": 1.0
+  },
+  "flip_temp0.3": {
+    "delivered_frac": 1.0,
+    "argmax_flip_rate": 0.009246886525201774,
+    "sample_flip_rate": 0.0056657223796034,
+    "mean_total_variation": 0.00590878995491689,
+    "mean_KL": 0.06326534617270627,
+    "mean_prior_top1_gap": 16.418936983486034,
+    "flip_rate_high_gap": 0.0012615019293558919,
+    "flip_rate_low_gap": 0.017007452703993883,
+    "frac_states_high_gap": 0.7202950451654284,
+    "flip_rate_first8_positions": [
+      0.0,
+      0.0625,
+      0.0275,
+      0.01,
+      0.0,
+      0.005,
+      0.005,
+      0.0
+    ],
+    "n_states": 18709,
+    "temp": 0.3
+  }
+}

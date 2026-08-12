@@ -94,7 +94,7 @@ def get_qm9_splits(
             return False
 
     logging.info("Dropping uncharacterized molecules.")
-    gdb9_url_excluded = "https://springernature.figshare.com/ndownloader/files/3195404"
+    gdb9_url_excluded = "https://ndownloader.figshare.com/files/3195404"
     gdb9_txt_excluded = os.path.join(root_dir, "uncharacterized.txt")
     urllib.request.urlretrieve(gdb9_url_excluded, filename=gdb9_txt_excluded)
 

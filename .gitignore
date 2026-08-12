@@ -1,4 +1,5 @@
 data/
+figures/
 __pycache__/
 wandb/
 logs/
@@ -6,3 +7,11 @@ trash/
 slurm/
 samples/
 checkpoints/
+*.pt
+*.npy
+.gitignore
+.ipynb_checkpoints/
+*_logs/
+runlogs_guac/
+*.log
+*.ckpt

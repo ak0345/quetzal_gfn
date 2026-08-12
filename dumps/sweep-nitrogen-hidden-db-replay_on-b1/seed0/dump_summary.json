@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-nitrogen-hidden-db-replay_on-b1/checkpoints/last.ckpt",
+  "name": "sweep-nitrogen-hidden-db-replay_on-b1",
+  "seed": 0,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "nitrogen_count",
+  "reward_smiles": null,
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4690,
+    "parse_rate": 0.938,
+    "n_parse_fail": 310,
+    "uniqueness": 0.988912579957356,
+    "log_reward_mean": -2.273018382556403,
+    "log_reward_top1": 0.0,
+    "log_reward_top10": -0.36248438954353335,
+    "log_reward_top100": -1.0244796216487884,
+    "atom_stability": 0.8510763915996565,
+    "mol_stability": 0.024
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4641,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.9976298211592329,
+    "log_reward_mean": -2.369011733018743,
+    "log_reward_top1": -0.6890063881874084,
+    "log_reward_top10": -0.8845488488674164,
+    "log_reward_top100": -1.1575119698047638,
+    "atom_stability": 0.8544708614082822,
+    "mol_stability": 0.027,
+    "reused_from": "dumps/_base/nitrogen/seed0"
+  },
+  "base_reused_from": "dumps/_base/nitrogen/seed0",
+  "fcd": {
+    "guided_vs_base": 0.3439434651586737,
+    "guided_vs_ref": 5.428757759766157,
+    "base_vs_ref": 4.427940043898772
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 23.60476101023455,
+      "base_vs_ref": 17.336867902219353
+    },
+    "logP": {
+      "guided_vs_ref": 0.5000085381364607,
+      "base_vs_ref": 0.3454792781913382
+    },
+    "TPSA": {
+      "guided_vs_ref": 3.955021445629003,
+      "base_vs_ref": 4.483138573152338
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.8096072494669508,
+      "base_vs_ref": 1.35384421460892
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.24504690831556514,
+      "base_vs_ref": 0.202071924154277
+    }
+  },
+  "top10_delta_guided_minus_base": 0.522064459323883
+}

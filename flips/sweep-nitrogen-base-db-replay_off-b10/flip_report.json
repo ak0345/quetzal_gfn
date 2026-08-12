@@ -1,0 +1,54 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-nitrogen-base-db-replay_off-b10/checkpoints/last.ckpt",
+  "guide_type": "TempGainGuide",
+  "reward": "nitrogen_count",
+  "reward_smiles": null,
+  "guide_source": "ema",
+  "n_traj": 400,
+  "flip_temp1.0": {
+    "delivered_frac": 1.0,
+    "argmax_flip_rate": 0.023452413416962095,
+    "sample_flip_rate": 0.017889282792473413,
+    "mean_total_variation": 0.017789192132950736,
+    "mean_KL": 0.019719618935100984,
+    "mean_prior_top1_gap": 16.517351544673808,
+    "flip_rate_high_gap": 0.0002256317689530686,
+    "flip_rate_low_gap": 0.06449692399285573,
+    "frac_states_high_gap": 0.7251704390509953,
+    "flip_rate_first8_positions": [
+      0.2825,
+      0.0975,
+      0.0475,
+      0.035,
+      0.015,
+      0.0325,
+      0.0075,
+      0.0325
+    ],
+    "n_states": 18335,
+    "temp": 1.0
+  },
+  "flip_temp0.3": {
+    "delivered_frac": 1.0,
+    "argmax_flip_rate": 0.029555836864989818,
+    "sample_flip_rate": 0.017997688370301062,
+    "mean_total_variation": 0.01663543226635298,
+    "mean_KL": 0.04273610447118413,
+    "mean_prior_top1_gap": 16.271295903860043,
+    "flip_rate_high_gap": 7.740537193281214e-05,
+    "flip_rate_low_gap": 0.06209523809523809,
+    "frac_states_high_gap": 0.7110462876327811,
+    "flip_rate_first8_positions": [
+      0.0825,
+      0.17,
+      0.1,
+      0.0325,
+      0.0175,
+      0.055,
+      0.02,
+      0.015
+    ],
+    "n_states": 18169,
+    "temp": 0.3
+  }
+}

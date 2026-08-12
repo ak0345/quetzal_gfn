@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-fexo-hidden-db-replay_on-b1/checkpoints/last.ckpt",
+  "name": "sweep-fexo-hidden-db-replay_on-b1",
+  "seed": 42,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "guacamol",
+  "reward_smiles": "hard_fexofenadine",
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4669,
+    "parse_rate": 0.9338,
+    "n_parse_fail": 331,
+    "uniqueness": 0.9873634611265796,
+    "log_reward_mean": -2.528659623531949,
+    "log_reward_top1": -0.27062588930130005,
+    "log_reward_top10": -0.33958396315574646,
+    "log_reward_top100": -0.4222840863466263,
+    "atom_stability": 0.8469411661346531,
+    "mol_stability": 0.0182
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4620,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.9987012987012988,
+    "log_reward_mean": -2.563589575041682,
+    "log_reward_top1": -0.27062588930130005,
+    "log_reward_top10": -0.35302517712116244,
+    "log_reward_top100": -0.42888619303703307,
+    "atom_stability": 0.8526116757267785,
+    "mol_stability": 0.0232,
+    "reused_from": "dumps/_base/fexo/seed42"
+  },
+  "base_reused_from": "dumps/_base/fexo/seed42",
+  "fcd": {
+    "guided_vs_base": 0.4767094677982442,
+    "guided_vs_ref": 6.047051056338546,
+    "base_vs_ref": 4.306199151562396
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 21.28703149852218,
+      "base_vs_ref": 14.988010878787884
+    },
+    "logP": {
+      "guided_vs_ref": 0.48529306421118035,
+      "base_vs_ref": 0.3399854235757577
+    },
+    "TPSA": {
+      "guided_vs_ref": 4.387133094452776,
+      "base_vs_ref": 4.436697826839828
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.760428228742771,
+      "base_vs_ref": 1.2410277056277048
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.291417219961448,
+      "base_vs_ref": 0.223909090909091
+    }
+  },
+  "top10_delta_guided_minus_base": 0.013441213965415977
+}

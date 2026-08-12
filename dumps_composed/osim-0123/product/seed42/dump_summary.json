@@ -1,0 +1,83 @@
+{
+  "name": "compose-osimertinib-product-k4-b10",
+  "seed": 42,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "reward": "guacamol",
+  "reward_benchmark": "osimertinib",
+  "reward_smiles": null,
+  "operator": "product",
+  "product_kind": "poe",
+  "compose_space": "tilted",
+  "compose_beta": 10.0,
+  "weights": "0.25,0.25,0.25,0.25",
+  "train_betas": "10,10,10,10",
+  "n_components": 4,
+  "primary_reward": "osim_MPO",
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4740,
+    "parse_rate": 0.948,
+    "uniqueness": 0.9985232067510549,
+    "log_reward_mean": -2.8344555556928297,
+    "log_reward_top1": -0.2118612125580139,
+    "log_reward_top10": -0.2208937235866078,
+    "log_reward_top100": -0.2725467149451262,
+    "atom_stability": 0.8646490961326369,
+    "mol_stability": 0.0186
+  },
+  "base": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4736,
+    "parse_rate": 0.9472,
+    "uniqueness": 0.9989442567567568,
+    "log_reward_mean": -2.9245535499957676,
+    "log_reward_top1": -0.2290726829685388,
+    "log_reward_top10": -0.2391704377301879,
+    "log_reward_top100": -0.2822102781873759,
+    "atom_stability": 0.8659020951246152,
+    "mol_stability": 0.0216
+  },
+  "fcd": {
+    "guided_vs_base": 0.7461651699407099,
+    "guided_vs_ref": 3.1495205047339,
+    "base_vs_ref": 2.702622120395148
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 7.706939870886076,
+      "base_vs_ref": 7.816791753378382
+    },
+    "logP": {
+      "guided_vs_ref": 0.28422988279324907,
+      "base_vs_ref": 0.24079551808783795
+    },
+    "TPSA": {
+      "guided_vs_ref": 1.4046251898734177,
+      "base_vs_ref": 1.7478662094594593
+    },
+    "n_heavy": {
+      "guided_vs_ref": 0.4824261603375525,
+      "base_vs_ref": 0.44855844594594546
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.19680253164556988,
+      "base_vs_ref": 0.19038851351351355
+    }
+  },
+  "component_means_composed": {
+    "osim_MPO": -2.8344555556928297,
+    "c0": -1.4533803259814562,
+    "c1": -0.26,
+    "c2": -7.079638596799999,
+    "c3": -2.544803299989864
+  },
+  "component_means_base": {
+    "osim_MPO": -2.9245535499957676,
+    "c0": -1.443540477867957,
+    "c1": -0.264,
+    "c2": -7.3201998282,
+    "c3": -2.670473893915114
+  },
+  "top10_delta_guided_minus_base": 0.01827671414358009
+}
