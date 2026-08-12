@@ -26,8 +26,6 @@ Both heads are ZERO-INIT so the model STARTS at exactly the current behavior
 
     T(h) = 1 + softplus(w_T . h + b_T)            (>= 1, starts at 1)
     g(h) = softplus(w_g . h + b_g + SOFTPLUS_INV_1)  (>= 0, starts at 1)
-
-Drop these two classes into gflow.py and wire per the WIRING NOTES below.
 """
 import math
 import torch
@@ -108,59 +106,3 @@ class TempGainGuide(nn.Module):
         if self.gain is not None:
             resid = self.gain(h).unsqueeze(-1) * resid
         return resid
-
-
-# ============================================================================
-# WIRING NOTES -- how to integrate into gflow.py
-# ============================================================================
-#
-# 1) BUILD IT in LitGFlowNet.__init__ (replace / wrap the LogitGuide):
-#
-#       from tempgain_guide import TempGainGuide
-#       base = LogitGuide(d_model, self.cfg.vocab_size,
-#                         self.cfg.guide_hidden, self.cfg.guide_layers)
-#       self.guide = TempGainGuide(
-#           base, d_model, hidden=128,
-#           use_temperature=self.cfg.use_prior_temp,
-#           use_gain=self.cfg.use_residual_gain)
-#
-#    Add two config flags to GFNConfig:
-#       use_prior_temp: bool = True
-#       use_residual_gain: bool = True
-#
-# 2) EVERYWHERE the code currently forms guided logits as
-#       guided = prior_logits + guide(h)
-#    replace with
-#       guided = self.guide.guided_logits(prior_logits, h)      # (LitGFlowNet)
-#    or, in the free monkeypatched functions that receive `guide` as an arg:
-#       if hasattr(guide, "guided_logits"):
-#           guided = guide.guided_logits(prior_logits, h)
-#       else:
-#           guided = prior_logits + guide(h)
-#
-#    The three call sites in gflow.py:
-#      * _generate_guided        (the monkeypatched Quetzal.generate_guided)
-#      * _db_rollout_states      (the DB rollout, WITH grad on the policy)
-#    and in compose.py:
-#      * generate_composed       (per-guide `gl = prior_logits + gi(h)`)
-#
-#    For compose.py, each loaded guide must be a TempGainGuide too; extract its
-#    temp/gain heads alongside the base guide in _extract_guide (new prefixes
-#    "guide.temp." and "guide.gain.").
-#
-# 3) OPTIMIZER: include the new params (they live under self.guide, so if you
-#    already pass self.guide.parameters() they're covered -- verify, since the
-#    base guide used to be self.guide directly).
-#
-# 4) START-AT-IDENTITY CHECK: with zero-init, at step 0 guided_logits should equal
-#    prior_logits + base_residual to within 1e-5. A quick assert in __init__:
-#       with torch.no_grad():
-#           h = torch.randn(4, d_model)
-#           pl = torch.randn(4, 128)
-#           g0 = base(h)
-#           g1 = self.guide.guided_logits(pl, h)
-#           assert torch.allclose(g1, pl + g0, atol=1e-4), "not identity at init"
-#
-# 5) WARM START (recommended): initialize `base` from your best existing guide
-#    checkpoint so temperature/gain learn on top of an already-trained residual,
-#    rather than retraining the whole guide from scratch.

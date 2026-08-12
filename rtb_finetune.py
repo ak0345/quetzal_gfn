@@ -2,18 +2,6 @@
 RTB (Relative Trajectory Balance) fine-tuning of Quetzal ITSELF, as a capacity
 control for the saturated-prior-ceiling result.
 
-WHY THIS EXISTS
----------------
-`gflow.py` trains a small *guide* that adds a residual to frozen atom-type
-logits. The thesis is that this can't steer hard MPO rewards because the
-residual (norm ~5-80) is dwarfed by the prior logits (norm ~6841). That is a
-CAPACITY claim. This script removes the capacity limit by training the model's
-own weights under the same RTB objective, which cleanly separates:
-
-  * fine-tuned model steers osim  -> the ceiling was real and architectural
-  * fine-tuned model also fails   -> capacity was never binding; the sparse
-                                     reward / unfittable target is the cause
-
 FINE-TUNING SCOPES  (--finetune_scope)
 --------------------------------------
   proj  : ONLY `proj_logits` (optionally LoRA-wrapped).
@@ -24,7 +12,7 @@ FINE-TUNING SCOPES  (--finetune_scope)
           intervention on precisely the object the ceiling argument is about.
           >>> This is the scientifically clean comparison to the guides. <<<
 
-  atom  : proj_logits + the encode1 trunk (blocks1, embeddings, wpe).
+  atom  : proj_logits + the encode1 trunk (blocks1, embeddings, wpe) (optionally LoRA-wrapped).
           Now z_prefix drifts, so p(coords|atoms) is NO LONGER identical and
           the atom-only ratio is an APPROXIMATION. We log
           `diag/zprefix_drift` (mean L2 between policy and frozen z_prefix) so
@@ -36,8 +24,7 @@ FINE-TUNING SCOPES  (--finetune_scope)
 
 An exact treatment of the coordinate term would need the ODE log-density
 (`Quetzal.log_density`, 120 steps of jacrev) inside the training loop, which is
-not affordable per batch. `proj` sidesteps the issue entirely -- prefer it for
-headline numbers and treat atom/full as capacity probes.
+not affordable per batch. `proj` sidesteps the issue entirely
 
 LoRA  (--lora_rank > 0)
 -----------------------
@@ -45,9 +32,6 @@ Wraps matched nn.Linear modules with a zero-init low-rank adapter (identity at
 step 0, like the guide's zero-init residual). Sweeping rank in {4,16,64,full}
 turns "does it steer" from a binary into a curve of steering vs. trainable
 parameter norm -- a much stronger figure than "guided ~= base".
-`--lora_targets` is a comma-separated list of substrings matched against module
-names; the matched list is printed at startup so you can verify it against your
-actual attention.py naming.
 
 MOLECULE RECORDING  (--record_dir)
 ----------------------------------
@@ -101,6 +85,8 @@ import importlib.util
 from dataclasses import dataclass, asdict, fields
 
 import numpy as np
+import numpy as np, scipy
+if not hasattr(scipy, "histogram"): scipy.histogram = np.histogram
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

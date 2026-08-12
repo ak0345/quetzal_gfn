@@ -4,9 +4,6 @@ Extended analysis for harvested training streams. Imported by harvest_eval.py.
 Everything here is computed from molecules.jsonl (i, epoch, smiles, log_reward,
 n_atoms) plus optional shard_*.pt coords. Nothing requires re-running training
 or changing rtb_finetune.py.
-
-Optional dependencies degrade gracefully: matplotlib (plots), guacamol
-(component breakdown), rdkit Contrib sascorer (synthetic accessibility).
 """
 
 import os

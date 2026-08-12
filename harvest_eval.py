@@ -6,22 +6,6 @@ training, in order, to DIR/molecules.jsonl. Each row's `i` is the oracle call
 index. This script slices that stream at a budget, dedupes, rescores with the
 benchmark's own scoring function, and reports the standard metrics.
 
-IS THIS A LEGITIMATE GUACAMOL EVALUATION?
------------------------------------------
-Yes. GuacaMol's goal-directed protocol calls `generate_optimized_molecules()`
-and scores the returned list, taking the mean of the top-k (k = 1, 10, 100).
-It is agnostic to how those molecules were produced -- the reference baselines
-(SMILES-LSTM hill climbing, Graph GA) likewise return molecules encountered
-during optimisation. Harvesting your training samples IS the standard method,
-not a workaround. What you must get right:
-
-  * count EVERY oracle call, including warm-up and any pre-filtering
-  * dedupe on canonical SMILES (a top-10 of one molecule ten times is not a
-    score); this script keeps the FIRST occurrence
-  * score with the benchmark's own [0,1] `modified score`, not beta*log R
-  * report the 3D->SMILES conversion rate, since bond perception is a failure
-    mode the 2D baselines never had
-
 Two budget conventions are emitted, because they are not comparable:
 
   unbounded : top-k over every molecule ever generated. The original GuacaMol
@@ -58,6 +42,8 @@ import glob
 import argparse
 
 import numpy as np
+import numpy as np, scipy
+if not hasattr(scipy, "histogram"): scipy.histogram = np.histogram
 from rdkit import Chem
 from rdkit import RDLogger
 

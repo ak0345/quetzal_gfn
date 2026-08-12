@@ -22,14 +22,13 @@ Invalid molecules return cfg.invalid_logr (RLPF paper uses -5).
 
 Quetzal outputs RAW ATOMIC NUMBERS (C=6, N=7, O=8, F=9, H=1), NOT model
 indices. So no atom-type remapping is applied anywhere in this file.
-
-The ONLY assumption about chem.Molecule: it exposes `.atoms` (1D atomic
-numbers, 0 = STOP/pad) and `.coords` ((N,3) in Angstrom).
 """
 
 import math
 import re
 import numpy as np
+import numpy as np, scipy
+if not hasattr(scipy, "histogram"): scipy.histogram = np.histogram
 
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors, DataStructs, QED

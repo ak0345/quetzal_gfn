@@ -26,7 +26,6 @@ Operators (G applied per step to the weighted forward dists W_i(.) := w_i * p_{i
                  --product_kind {poe, harmonic})
   * contrast ◐: p_M ∝ W_1^2 / (W_1 + W_2)               ("first high, others low"; approx)
 ------------------------------------------------------------------------------
-THE beta QUESTION (config flag `compose_space`).
 Each guide i was trained to sample p_i(x) ∝ p_prior(x) * R_i(x)^beta_i / Z_i,
 i.e. a *tilted* distribution, NOT p_i(x) ∝ R_i(x). Two ways to compose:
 
@@ -66,6 +65,8 @@ from dataclasses import dataclass, asdict, fields
 from types import SimpleNamespace
 
 import numpy as np
+import numpy as np, scipy
+if not hasattr(scipy, "histogram"): scipy.histogram = np.histogram
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

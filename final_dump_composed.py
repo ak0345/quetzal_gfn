@@ -34,6 +34,8 @@ import json
 import argparse
 
 import numpy as np
+import numpy as np, scipy
+if not hasattr(scipy, "histogram"): scipy.histogram = np.histogram
 import torch
 
 # reuse the metric helpers from final_dump2 (stability, descriptors, FCD wrapper)

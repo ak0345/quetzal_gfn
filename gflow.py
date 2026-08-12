@@ -5,13 +5,6 @@ Sample from  p*(x) ~ p_prior(x) * R(x)^beta  by training a small guide MLP that
 adds a residual to Quetzal's atom-type logits. Coordinate diffusion is frozen,
 so its log-density cancels in the RTB ratio and the objective only involves the
 discrete atom-type decisions.
-
-ADDITIONS over the base script:
-  - per-epoch eval (reward + validity, guided vs base, with deltas)
-  - every `hist_every_n_epochs`: reward histogram (guided vs base) to wandb,
-    plus FCD(guided, base) and optional FCD vs a reference SMILES set
-  - end of training: dump `final_n` molecules from base AND guided to disk
-    (atoms+coords .pt, SMILES .txt, rewards .json, summary .json)
     
 """
 
@@ -24,6 +17,8 @@ import importlib.util
 from dataclasses import dataclass, asdict, fields
 
 import numpy as np
+import numpy as np, scipy
+if not hasattr(scipy, "histogram"): scipy.histogram = np.histogram
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
