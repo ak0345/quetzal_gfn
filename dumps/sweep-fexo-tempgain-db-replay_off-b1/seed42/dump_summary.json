@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-fexo-tempgain-db-replay_off-b1/checkpoints/last.ckpt",
+  "name": "sweep-fexo-tempgain-db-replay_off-b1",
+  "seed": 42,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "guacamol",
+  "reward_smiles": "hard_fexofenadine",
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4629,
+    "parse_rate": 0.9258,
+    "n_parse_fail": 371,
+    "uniqueness": 0.9984877943400302,
+    "log_reward_mean": -2.5371785406920586,
+    "log_reward_top1": -0.27062588930130005,
+    "log_reward_top10": -0.3489586502313614,
+    "log_reward_top100": -0.42408825308084486,
+    "atom_stability": 0.8523197385571528,
+    "mol_stability": 0.0214
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4620,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.9987012987012988,
+    "log_reward_mean": -2.563589575041682,
+    "log_reward_top1": -0.27062588930130005,
+    "log_reward_top10": -0.35302517712116244,
+    "log_reward_top100": -0.42888619303703307,
+    "atom_stability": 0.8526116757267785,
+    "mol_stability": 0.0232,
+    "reused_from": "dumps/_base/fexo/seed42"
+  },
+  "base_reused_from": "dumps/_base/fexo/seed42",
+  "fcd": {
+    "guided_vs_base": 0.060609584612763,
+    "guided_vs_ref": 4.4435041751433175,
+    "base_vs_ref": 4.306199151562396
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 14.981257789112128,
+      "base_vs_ref": 14.988010878787884
+    },
+    "logP": {
+      "guided_vs_ref": 0.3508189439192051,
+      "base_vs_ref": 0.3399854235757577
+    },
+    "TPSA": {
+      "guided_vs_ref": 4.247175508749188,
+      "base_vs_ref": 4.436697826839828
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.234698855044286,
+      "base_vs_ref": 1.2410277056277048
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.23316202203499675,
+      "base_vs_ref": 0.223909090909091
+    }
+  },
+  "top10_delta_guided_minus_base": 0.004066526889801025
+}

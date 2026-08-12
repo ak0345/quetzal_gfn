@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-peri-hidden-db-replay_off-b1/checkpoints/last.ckpt",
+  "name": "sweep-peri-hidden-db-replay_off-b1",
+  "seed": 100,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "guacamol",
+  "reward_smiles": "perindopril_rings",
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4680,
+    "parse_rate": 0.936,
+    "n_parse_fail": 320,
+    "uniqueness": 0.997008547008547,
+    "log_reward_mean": -2.5875282544992926,
+    "log_reward_top1": -0.7393338680267334,
+    "log_reward_top10": -0.7876028180122375,
+    "log_reward_top100": -0.909461225271225,
+    "atom_stability": 0.8525280435305379,
+    "mol_stability": 0.0248
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4673,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.99700406591055,
+    "log_reward_mean": -2.585895293954861,
+    "log_reward_top1": -0.7393338680267334,
+    "log_reward_top10": -0.7876028180122375,
+    "log_reward_top100": -0.9091819930076599,
+    "atom_stability": 0.8524100641490594,
+    "mol_stability": 0.0244,
+    "reused_from": "dumps/_base/peri/seed100"
+  },
+  "base_reused_from": "dumps/_base/peri/seed100",
+  "fcd": {
+    "guided_vs_base": 0.027219901584771833,
+    "guided_vs_ref": 4.161896747491923,
+    "base_vs_ref": 4.144421280014981
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 14.423643699145302,
+      "base_vs_ref": 14.531700820158363
+    },
+    "logP": {
+      "guided_vs_ref": 0.35793160622222236,
+      "base_vs_ref": 0.35281490813909705
+    },
+    "TPSA": {
+      "guided_vs_ref": 3.433990888888889,
+      "base_vs_ref": 3.5680180530708334
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.1772649572649567,
+      "base_vs_ref": 1.193341536486197
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.1892495726495726,
+      "base_vs_ref": 0.1916588487053284
+    }
+  },
+  "top10_delta_guided_minus_base": 0.0
+}

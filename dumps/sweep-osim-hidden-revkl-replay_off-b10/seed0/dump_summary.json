@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-osim-hidden-revkl-replay_off-b10/checkpoints/last.ckpt",
+  "name": "sweep-osim-hidden-revkl-replay_off-b10",
+  "seed": 0,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "guacamol",
+  "reward_smiles": "hard_osimertinib",
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4638,
+    "parse_rate": 0.9276,
+    "n_parse_fail": 362,
+    "uniqueness": 0.9980595084087969,
+    "log_reward_mean": -2.7220530851409577,
+    "log_reward_top1": -0.21531401574611664,
+    "log_reward_top10": -0.2355723798274994,
+    "log_reward_top100": -0.27856005609035495,
+    "atom_stability": 0.8501441338950859,
+    "mol_stability": 0.0242
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4641,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.9976298211592329,
+    "log_reward_mean": -3.1923456504809344,
+    "log_reward_top1": -0.21349063515663147,
+    "log_reward_top10": -0.2332309365272522,
+    "log_reward_top100": -0.2808708596229553,
+    "atom_stability": 0.8544708614082822,
+    "mol_stability": 0.027,
+    "reused_from": "dumps/_base/osim/seed0"
+  },
+  "base_reused_from": "dumps/_base/osim/seed0",
+  "fcd": {
+    "guided_vs_base": 0.5120971227178472,
+    "guided_vs_ref": 4.985199575518365,
+    "base_vs_ref": 4.427940043898772
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 19.610277547304875,
+      "base_vs_ref": 17.336867902219353
+    },
+    "logP": {
+      "guided_vs_ref": 0.47990030649676607,
+      "base_vs_ref": 0.3454792781913382
+    },
+    "TPSA": {
+      "guided_vs_ref": 3.158766929711086,
+      "base_vs_ref": 4.483138573152338
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.4739343682621815,
+      "base_vs_ref": 1.35384421460892
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.182440620957309,
+      "base_vs_ref": 0.202071924154277
+    }
+  },
+  "top10_delta_guided_minus_base": -0.0023414433002472146
+}

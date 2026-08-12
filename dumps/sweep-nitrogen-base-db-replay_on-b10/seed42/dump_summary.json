@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-nitrogen-base-db-replay_on-b10/checkpoints/last.ckpt",
+  "name": "sweep-nitrogen-base-db-replay_on-b10",
+  "seed": 42,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "nitrogen_count",
+  "reward_smiles": null,
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4684,
+    "parse_rate": 0.9368,
+    "n_parse_fail": 316,
+    "uniqueness": 0.9927412467976089,
+    "log_reward_mean": -2.1057240774904327,
+    "log_reward_top1": 0.0,
+    "log_reward_top10": -0.3043189764022827,
+    "log_reward_top100": -0.9093562114238739,
+    "atom_stability": 0.8486897053188039,
+    "mol_stability": 0.0244
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4620,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.9987012987012988,
+    "log_reward_mean": -2.3789634595185647,
+    "log_reward_top1": -0.3973017930984497,
+    "log_reward_top10": -0.8003651082515717,
+    "log_reward_top100": -1.1750991439819336,
+    "atom_stability": 0.8526116757267785,
+    "mol_stability": 0.0232,
+    "reused_from": "dumps/_base/nitrogen/seed42"
+  },
+  "base_reused_from": "dumps/_base/nitrogen/seed42",
+  "fcd": {
+    "guided_vs_base": 0.929491926846282,
+    "guided_vs_ref": 5.65000711846811,
+    "base_vs_ref": 4.306199151562396
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 25.659820355764307,
+      "base_vs_ref": 14.988010878787884
+    },
+    "logP": {
+      "guided_vs_ref": 0.6648506312263026,
+      "base_vs_ref": 0.3399854235757577
+    },
+    "TPSA": {
+      "guided_vs_ref": 5.644401596925704,
+      "base_vs_ref": 4.436697826839828
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.9139062339880435,
+      "base_vs_ref": 1.2410277056277048
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.3116295473953888,
+      "base_vs_ref": 0.223909090909091
+    }
+  },
+  "top10_delta_guided_minus_base": 0.496046131849289
+}

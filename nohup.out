@@ -1,0 +1,96 @@
+Traceback (most recent call last):
+  File "/workspace/quetzal/diag_atoms_vs_coords.py", line 48, in <module>
+    from gflow_multi import MultiConfig, Composer
+  File "/workspace/quetzal/gflow_multi.py", line 76, in <module>
+    from model import Quetzal
+  File "/workspace/quetzal/model.py", line 9, in <module>
+    from simple_mlp import SimpleMLPAdaLN, FourierCoords, MPFourier
+  File "/workspace/quetzal/simple_mlp.py", line 8, in <module>
+    from attention import SwiGLUFFN
+  File "/workspace/quetzal/attention.py", line 5, in <module>
+    from torch.nn.attention.flex_attention import flex_attention
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/torch/nn/attention/flex_attention.py", line 16, in <module>
+    from torch._dynamo._trace_wrapped_higher_order_op import TransformGetItemToIndex
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/torch/_dynamo/__init__.py", line 3, in <module>
+    from . import convert_frame, eval_frame, resume_execution
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/torch/_dynamo/convert_frame.py", line 33, in <module>
+    from torch._dynamo.symbolic_convert import TensorifyState
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/torch/_dynamo/symbolic_convert.py", line 27, in <module>
+    from torch._dynamo.exc import TensorifyScalarRestartAnalysis
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/torch/_dynamo/exc.py", line 11, in <module>
+    from .utils import counters
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/torch/_dynamo/utils.py", line 66, in <module>
+    import torch.fx.experimental.symbolic_shapes
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/torch/fx/experimental/symbolic_shapes.py", line 74, in <module>
+    from torch.utils._sympy.functions import (
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/torch/utils/_sympy/functions.py", line 18, in <module>
+    import sympy
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/sympy/__init__.py", line 74, in <module>
+    from .polys import (Poly, PurePoly, poly_from_expr, parallel_poly_from_expr,
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/sympy/polys/__init__.py", line 124, in <module>
+    from .partfrac import apart, apart_list, assemble_partfrac_list
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/sympy/polys/partfrac.py", line 15, in <module>
+    def apart(f, x=None, full=False, **options):
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/sympy/utilities/decorator.py", line 76, in xthreaded
+    return threaded_factory(func, False)
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/sympy/utilities/decorator.py", line 13, in threaded_factory
+    from sympy.matrices import MatrixBase
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/sympy/matrices/__init__.py", line 22, in <module>
+    from .immutable import ImmutableDenseMatrix, ImmutableSparseMatrix
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/sympy/matrices/immutable.py", line 8, in <module>
+    from sympy.matrices.expressions import MatrixExpr
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/sympy/matrices/expressions/__init__.py", line 19, in <module>
+    from .kronecker import kronecker_product, KroneckerProduct, combine_kronecker
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 879, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1012, in get_code
+  File "<frozen importlib._bootstrap_external>", line 672, in _compile_bytecode
+KeyboardInterrupt
+KeyboardInterrupt
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/workspace/quetzal/gflow.py", line 31, in <module>
+    import lightning as L
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/lightning/__init__.py", line 20, in <module>
+    from lightning.pytorch.callbacks import Callback  # noqa: E402
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/lightning/pytorch/__init__.py", line 27, in <module>
+    from lightning.pytorch.callbacks import Callback  # noqa: E402
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/lightning/pytorch/callbacks/__init__.py", line 14, in <module>
+    from lightning.pytorch.callbacks.batch_size_finder import BatchSizeFinder
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/lightning/pytorch/callbacks/batch_size_finder.py", line 26, in <module>
+    from lightning.pytorch.callbacks.callback import Callback
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/lightning/pytorch/callbacks/callback.py", line 22, in <module>
+    from lightning.pytorch.utilities.types import STEP_OUTPUT
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/lightning/pytorch/utilities/types.py", line 36, in <module>
+    from torchmetrics import Metric
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/torchmetrics/__init__.py", line 31, in <module>
+    import scipy.signal
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/signal/__init__.py", line 302, in <module>
+    from ._spline_filters import *
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/signal/_spline_filters.py", line 11, in <module>
+    from ._signaltools import lfilter, sosfilt, lfiltic
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/signal/_signaltools.py", line 16, in <module>
+    from ._ltisys import dlti
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/signal/_ltisys.py", line 29, in <module>
+    from scipy.interpolate import make_interp_spline
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/interpolate/__init__.py", line 179, in <module>
+    from ._interpolate import *
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/interpolate/_interpolate.py", line 12, in <module>
+    from . import _fitpack_py
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/interpolate/_fitpack_py.py", line 10, in <module>
+    from ._bsplines import BSpline
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/interpolate/_bsplines.py", line 9, in <module>
+    from scipy.optimize import minimize_scalar
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/optimize/__init__.py", line 435, in <module>
+    from ._linprog import linprog, linprog_verbose_callback
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/optimize/_linprog.py", line 21, in <module>
+    from ._linprog_highs import _linprog_highs
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/optimize/_linprog_highs.py", line 20, in <module>
+    from ._highspy._highs_wrapper import _highs_wrapper
+  File "/root/miniconda3/envs/quetzal/lib/python3.10/site-packages/scipy/optimize/_highspy/_highs_wrapper.py", line 4, in <module>
+    import scipy.optimize._highspy._core as _h # type: ignore[import-not-found]
+ImportError: initialization failed

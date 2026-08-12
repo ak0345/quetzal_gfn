@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-fexo-hidden-db-replay_on-b10/checkpoints/last.ckpt",
+  "name": "sweep-fexo-hidden-db-replay_on-b10",
+  "seed": 42,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "guacamol",
+  "reward_smiles": "hard_fexofenadine",
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4675,
+    "parse_rate": 0.935,
+    "n_parse_fail": 325,
+    "uniqueness": 0.9816042780748663,
+    "log_reward_mean": -2.630742413978526,
+    "log_reward_top1": -0.27062588930130005,
+    "log_reward_top10": -0.3406043410301208,
+    "log_reward_top100": -0.4269145631790161,
+    "atom_stability": 0.8514541761144256,
+    "mol_stability": 0.0202
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4620,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.9987012987012988,
+    "log_reward_mean": -2.563589575041682,
+    "log_reward_top1": -0.27062588930130005,
+    "log_reward_top10": -0.35302517712116244,
+    "log_reward_top100": -0.42888619303703307,
+    "atom_stability": 0.8526116757267785,
+    "mol_stability": 0.0232,
+    "reused_from": "dumps/_base/fexo/seed42"
+  },
+  "base_reused_from": "dumps/_base/fexo/seed42",
+  "fcd": {
+    "guided_vs_base": 0.37748759191866554,
+    "guided_vs_ref": 5.553742253554276,
+    "base_vs_ref": 4.306199151562396
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 27.087282221390396,
+      "base_vs_ref": 14.988010878787884
+    },
+    "logP": {
+      "guided_vs_ref": 0.4631908285668451,
+      "base_vs_ref": 0.3399854235757577
+    },
+    "TPSA": {
+      "guided_vs_ref": 5.104772909090911,
+      "base_vs_ref": 4.436697826839828
+    },
+    "n_heavy": {
+      "guided_vs_ref": 2.1552288770053467,
+      "base_vs_ref": 1.2410277056277048
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.35588556149732664,
+      "base_vs_ref": 0.223909090909091
+    }
+  },
+  "top10_delta_guided_minus_base": 0.01242083609104161
+}

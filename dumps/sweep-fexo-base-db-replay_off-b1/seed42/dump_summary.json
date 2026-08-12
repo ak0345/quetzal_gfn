@@ -1,0 +1,66 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-fexo-base-db-replay_off-b1/checkpoints/last.ckpt",
+  "name": "sweep-fexo-base-db-replay_off-b1",
+  "seed": 42,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "guacamol",
+  "reward_smiles": "hard_fexofenadine",
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4641,
+    "parse_rate": 0.9282,
+    "n_parse_fail": 359,
+    "uniqueness": 0.9982762335703512,
+    "log_reward_mean": -2.552788848251239,
+    "log_reward_top1": -0.27062588930130005,
+    "log_reward_top10": -0.3457358479499817,
+    "log_reward_top100": -0.4240686932206154,
+    "atom_stability": 0.8523625971954543,
+    "mol_stability": 0.0224
+  },
+  "base": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4639,
+    "parse_rate": 0.9278,
+    "n_parse_fail": 361,
+    "uniqueness": 0.9978443630092693,
+    "log_reward_mean": -2.5209322268913006,
+    "log_reward_top1": -0.25334417819976807,
+    "log_reward_top10": -0.33850435018539426,
+    "log_reward_top100": -0.41849344670772554,
+    "atom_stability": 0.8536311472691176,
+    "mol_stability": 0.0302
+  },
+  "fcd": {
+    "guided_vs_base": 0.6968549480800164,
+    "guided_vs_ref": 4.6359843009665695,
+    "base_vs_ref": 4.260742452127246
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 15.710819787588886,
+      "base_vs_ref": 17.4444072398793
+    },
+    "logP": {
+      "guided_vs_ref": 0.3608654108532645,
+      "base_vs_ref": 0.3642388583112741
+    },
+    "TPSA": {
+      "guided_vs_ref": 4.390113154492568,
+      "base_vs_ref": 4.045851554645399
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.2920074552898073,
+      "base_vs_ref": 1.3819702090967882
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.2342389571213101,
+      "base_vs_ref": 0.22415119637853004
+    }
+  },
+  "top10_delta_guided_minus_base": -0.0072314977645874245
+}

@@ -1,0 +1,54 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-fexo-base-db-replay_off-b1/checkpoints/last.ckpt",
+  "guide_type": "TempGainGuide",
+  "reward": "guacamol",
+  "reward_smiles": "hard_fexofenadine",
+  "guide_source": "ema",
+  "n_traj": 400,
+  "flip_temp1.0": {
+    "delivered_frac": 1.0,
+    "argmax_flip_rate": 0.0038255547054322878,
+    "sample_flip_rate": 0.004699967209531097,
+    "mean_total_variation": 0.0035716922286554253,
+    "mean_KL": 0.004180625862289937,
+    "mean_prior_top1_gap": 16.46077806033102,
+    "flip_rate_high_gap": 0.00030413625304136254,
+    "flip_rate_low_gap": 0.015934706568208317,
+    "frac_states_high_gap": 0.7187670783692207,
+    "flip_rate_first8_positions": [
+      0.02,
+      0.0225,
+      0.0325,
+      0.0025,
+      0.0075,
+      0.005,
+      0.0075,
+      0.0025
+    ],
+    "n_states": 18298,
+    "temp": 1.0
+  },
+  "flip_temp0.3": {
+    "delivered_frac": 1.0,
+    "argmax_flip_rate": 0.00270091500385845,
+    "sample_flip_rate": 0.004189174291698821,
+    "mean_total_variation": 0.004554966051857026,
+    "mean_KL": 0.01061435284850671,
+    "mean_prior_top1_gap": 16.438508931258696,
+    "flip_rate_high_gap": 7.655209369976269e-05,
+    "flip_rate_low_gap": 0.014766686355581808,
+    "frac_states_high_gap": 0.720041891742917,
+    "flip_rate_first8_positions": [
+      0.0,
+      0.075,
+      0.04,
+      0.0025,
+      0.0,
+      0.0025,
+      0.0025,
+      0.005
+    ],
+    "n_states": 18142,
+    "temp": 0.3
+  }
+}
