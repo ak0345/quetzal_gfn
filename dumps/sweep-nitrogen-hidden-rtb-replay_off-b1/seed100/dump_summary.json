@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-nitrogen-hidden-rtb-replay_off-b1/checkpoints/last.ckpt",
+  "name": "sweep-nitrogen-hidden-rtb-replay_off-b1",
+  "seed": 100,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "nitrogen_count",
+  "reward_smiles": null,
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4688,
+    "parse_rate": 0.9376,
+    "n_parse_fail": 312,
+    "uniqueness": 0.998080204778157,
+    "log_reward_mean": -2.3243435369772714,
+    "log_reward_top1": -0.5833765268325806,
+    "log_reward_top10": -0.8430940687656403,
+    "log_reward_top100": -1.1265433502197266,
+    "atom_stability": 0.8534711243919259,
+    "mol_stability": 0.024
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4673,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.99700406591055,
+    "log_reward_mean": -2.350504577019575,
+    "log_reward_top1": -0.22067135572433472,
+    "log_reward_top10": -0.7487554907798767,
+    "log_reward_top100": -1.1367111933231353,
+    "atom_stability": 0.8524100641490594,
+    "mol_stability": 0.0244,
+    "reused_from": "dumps/_base/nitrogen/seed100"
+  },
+  "base_reused_from": "dumps/_base/nitrogen/seed100",
+  "fcd": {
+    "guided_vs_base": 0.09474398108206117,
+    "guided_vs_ref": 4.0466138779021605,
+    "base_vs_ref": 4.144421280014981
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 13.722475019453928,
+      "base_vs_ref": 14.531700820158363
+    },
+    "logP": {
+      "guided_vs_ref": 0.3660110049624575,
+      "base_vs_ref": 0.35281490813909705
+    },
+    "TPSA": {
+      "guided_vs_ref": 2.952839406143345,
+      "base_vs_ref": 3.5680180530708334
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.098077133105802,
+      "base_vs_ref": 1.193341536486197
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.18464607508532427,
+      "base_vs_ref": 0.1916588487053284
+    }
+  },
+  "top10_delta_guided_minus_base": -0.09433857798576362
+}

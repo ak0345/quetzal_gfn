@@ -1,0 +1,54 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-peri-base-db-replay_on-b1/checkpoints/last.ckpt",
+  "guide_type": "TempGainGuide",
+  "reward": "guacamol",
+  "reward_smiles": "perindopril_rings",
+  "guide_source": "ema",
+  "n_traj": 400,
+  "flip_temp1.0": {
+    "delivered_frac": 1.0,
+    "argmax_flip_rate": 0.003863774355577634,
+    "sample_flip_rate": 0.0024838549428713363,
+    "mean_total_variation": 0.001598349323269713,
+    "mean_KL": 7.860518726924769e-05,
+    "mean_prior_top1_gap": 16.49387749279612,
+    "flip_rate_high_gap": 0.0,
+    "flip_rate_low_gap": 0.008992805755395683,
+    "frac_states_high_gap": 0.7237953303527074,
+    "flip_rate_first8_positions": [
+      0.055,
+      0.0125,
+      0.0175,
+      0.0025,
+      0.0025,
+      0.0025,
+      0.0025,
+      0.0
+    ],
+    "n_states": 18117,
+    "temp": 1.0
+  },
+  "flip_temp0.3": {
+    "delivered_frac": 1.0,
+    "argmax_flip_rate": 0.005440457218222784,
+    "sample_flip_rate": 0.0012089904929383965,
+    "mean_total_variation": 0.00149373509345433,
+    "mean_KL": 0.00016774793712895052,
+    "mean_prior_top1_gap": 16.271405356031345,
+    "flip_rate_high_gap": 0.0,
+    "flip_rate_low_gap": 0.004220218684059083,
+    "frac_states_high_gap": 0.7135242072869155,
+    "flip_rate_first8_positions": [
+      0.0025,
+      0.0125,
+      0.005,
+      0.0,
+      0.0025,
+      0.0,
+      0.005,
+      0.0025
+    ],
+    "n_states": 18197,
+    "temp": 0.3
+  }
+}

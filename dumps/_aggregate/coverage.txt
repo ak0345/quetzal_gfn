@@ -1,0 +1,26 @@
+=== dump coverage (partial-aware) ===
+models with >=1 seed: 71
+total (model,seed) cells present: 201
+
+models by #seeds completed:
+  3 seed(s): 65 models
+  1 seed(s): 6 models
+
+models with <3 seeds (still pending): 6
+  compose-osimertinib-harmonic-k3-b10: seeds [42]
+  compose-osimertinib-harmonic-k4-b10: seeds [42]
+  compose-osimertinib-linear-k3-b10: seeds [42]
+  compose-osimertinib-linear-k4-b10: seeds [42]
+  compose-osimertinib-product-k3-b10: seeds [42]
+  compose-osimertinib-product-k4-b10: seeds [42]
+
+per-family cells present:
+  base_prior: 15 cells across 5 models
+  compose: 6 cells across 6 models
+  stability: 12 cells across 4 models
+  sweep: 168 cells across 56 models
+
+NOTE: master_table means/stds are over WHATEVER seeds are present
+      per model (n_seeds column). Rows with n_seeds<3 have higher
+      variance and their std is over fewer points -- treat as
+      provisional until the full grid finishes.

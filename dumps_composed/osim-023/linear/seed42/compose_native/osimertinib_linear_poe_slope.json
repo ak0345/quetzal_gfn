@@ -1,0 +1,10 @@
+{
+  "slope": 0.03226829128506197,
+  "intercept": -4.747797708386153,
+  "r": 0.018337802912755146,
+  "r2": 0.0003362750156670511,
+  "n": 4183,
+  "label": "composed",
+  "weights_desc": "0.25*c0+0.25*c2+0.25*c3",
+  "verdict": "DECOUPLED: low r, check upstream"
+}

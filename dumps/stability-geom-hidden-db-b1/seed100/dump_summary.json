@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/stability-geom-hidden-db-b1/checkpoints/last.ckpt",
+  "name": "stability-geom-hidden-db-b1",
+  "seed": 100,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "atom_stability",
+  "reward_smiles": null,
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4731,
+    "parse_rate": 0.9462,
+    "n_parse_fail": 269,
+    "uniqueness": 0.9828788839568802,
+    "log_reward_mean": -0.18254301842294998,
+    "log_reward_top1": 0.0,
+    "log_reward_top10": 0.0,
+    "log_reward_top100": -0.0009950748458504677,
+    "atom_stability": 0.8507467078643419,
+    "mol_stability": 0.019
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4673,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.99700406591055,
+    "log_reward_mean": -0.16046951836775833,
+    "log_reward_top1": 0.0,
+    "log_reward_top10": 0.0,
+    "log_reward_top100": 0.0,
+    "atom_stability": 0.8524100641490594,
+    "mol_stability": 0.0244,
+    "reused_from": "dumps/_base/stability/seed100"
+  },
+  "base_reused_from": "dumps/_base/stability/seed100",
+  "fcd": {
+    "guided_vs_base": 0.3253421833530723,
+    "guided_vs_ref": 5.351512923634459,
+    "base_vs_ref": 4.144421280014981
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 23.128782978101896,
+      "base_vs_ref": 14.531700820158363
+    },
+    "logP": {
+      "guided_vs_ref": 0.4307707587440289,
+      "base_vs_ref": 0.35281490813909705
+    },
+    "TPSA": {
+      "guided_vs_ref": 4.4492979856267185,
+      "base_vs_ref": 3.5680180530708334
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.8869283026844217,
+      "base_vs_ref": 1.193341536486197
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.2824522933840625,
+      "base_vs_ref": 0.1916588487053284
+    }
+  },
+  "top10_delta_guided_minus_base": 0.0
+}

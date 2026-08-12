@@ -1,0 +1,54 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-osim-tempgain-db-replay_off-b1/checkpoints/last.ckpt",
+  "guide_type": "TempGainGuide",
+  "reward": "guacamol",
+  "reward_smiles": "hard_osimertinib",
+  "guide_source": "ema",
+  "n_traj": 400,
+  "flip_temp1.0": {
+    "delivered_frac": 1.0,
+    "argmax_flip_rate": 0.007232773851590106,
+    "sample_flip_rate": 0.002208480565371025,
+    "mean_total_variation": 0.0021321538337785756,
+    "mean_KL": 0.0030395606588787135,
+    "mean_prior_top1_gap": 16.318726748543998,
+    "flip_rate_high_gap": 7.71188401326444e-05,
+    "flip_rate_low_gap": 0.007580174927113703,
+    "frac_states_high_gap": 0.7159341872791519,
+    "flip_rate_first8_positions": [
+      0.0,
+      0.005,
+      0.01,
+      0.0075,
+      0.005,
+      0.0025,
+      0.005,
+      0.0
+    ],
+    "n_states": 18112,
+    "temp": 1.0
+  },
+  "flip_temp0.3": {
+    "delivered_frac": 1.0,
+    "argmax_flip_rate": 0.008663433771045606,
+    "sample_flip_rate": 0.002996785266713889,
+    "mean_total_variation": 0.002586119078081862,
+    "mean_KL": 0.006385943103519367,
+    "mean_prior_top1_gap": 16.185407769288354,
+    "flip_rate_high_gap": 7.671653241273494e-05,
+    "flip_rate_low_gap": 0.010154193305754042,
+    "frac_states_high_gap": 0.7102381082111916,
+    "flip_rate_first8_positions": [
+      0.0,
+      0.03,
+      0.0175,
+      0.005,
+      0.0,
+      0.005,
+      0.0075,
+      0.005
+    ],
+    "n_states": 18353,
+    "temp": 0.3
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-nitrogen-hidden-db-replay_on-b1/checkpoints/last.ckpt",
+  "name": "sweep-nitrogen-hidden-db-replay_on-b1",
+  "seed": 100,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "nitrogen_count",
+  "reward_smiles": null,
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4714,
+    "parse_rate": 0.9428,
+    "n_parse_fail": 286,
+    "uniqueness": 0.9906661009758168,
+    "log_reward_mean": -2.252807038311843,
+    "log_reward_top1": 0.0,
+    "log_reward_top10": -0.41858569979667665,
+    "log_reward_top100": -1.0301717841625213,
+    "atom_stability": 0.8491547210969149,
+    "mol_stability": 0.0208
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4673,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.99700406591055,
+    "log_reward_mean": -2.350504577019575,
+    "log_reward_top1": -0.22067135572433472,
+    "log_reward_top10": -0.7487554907798767,
+    "log_reward_top100": -1.1367111933231353,
+    "atom_stability": 0.8524100641490594,
+    "mol_stability": 0.0244,
+    "reused_from": "dumps/_base/nitrogen/seed100"
+  },
+  "base_reused_from": "dumps/_base/nitrogen/seed100",
+  "fcd": {
+    "guided_vs_base": 0.353761872676543,
+    "guided_vs_ref": 5.085695813509702,
+    "base_vs_ref": 4.144421280014981
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 20.670976029104807,
+      "base_vs_ref": 14.531700820158363
+    },
+    "logP": {
+      "guided_vs_ref": 0.49811895059567274,
+      "base_vs_ref": 0.35281490813909705
+    },
+    "TPSA": {
+      "guided_vs_ref": 3.4752904599066627,
+      "base_vs_ref": 3.5680180530708334
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.6687318625371232,
+      "base_vs_ref": 1.193341536486197
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.24731277047093775,
+      "base_vs_ref": 0.1916588487053284
+    }
+  },
+  "top10_delta_guided_minus_base": 0.33016979098320004
+}

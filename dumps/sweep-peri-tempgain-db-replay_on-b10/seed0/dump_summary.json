@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-peri-tempgain-db-replay_on-b10/checkpoints/last.ckpt",
+  "name": "sweep-peri-tempgain-db-replay_on-b10",
+  "seed": 0,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "guacamol",
+  "reward_smiles": "perindopril_rings",
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4644,
+    "parse_rate": 0.9288,
+    "n_parse_fail": 356,
+    "uniqueness": 0.9976313522825151,
+    "log_reward_mean": -2.588814734090617,
+    "log_reward_top1": -0.7192400693893433,
+    "log_reward_top10": -0.7954010963439941,
+    "log_reward_top100": -0.9108501768112183,
+    "atom_stability": 0.8550721889901125,
+    "mol_stability": 0.027
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4641,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.9976298211592329,
+    "log_reward_mean": -2.5867711941221363,
+    "log_reward_top1": -0.7142473459243774,
+    "log_reward_top10": -0.7965441644191742,
+    "log_reward_top100": -0.9132395958900452,
+    "atom_stability": 0.8544708614082822,
+    "mol_stability": 0.027,
+    "reused_from": "dumps/_base/peri/seed0"
+  },
+  "base_reused_from": "dumps/_base/peri/seed0",
+  "fcd": {
+    "guided_vs_base": 0.027518966277142454,
+    "guided_vs_ref": 4.394175757983618,
+    "base_vs_ref": 4.427940043898772
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 17.65981045598622,
+      "base_vs_ref": 17.336867902219353
+    },
+    "logP": {
+      "guided_vs_ref": 0.3384528763600346,
+      "base_vs_ref": 0.3454792781913382
+    },
+    "TPSA": {
+      "guided_vs_ref": 4.449824701119725,
+      "base_vs_ref": 4.483138573152338
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.3605527993109385,
+      "base_vs_ref": 1.35384421460892
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.20393023255813958,
+      "base_vs_ref": 0.202071924154277
+    }
+  },
+  "top10_delta_guided_minus_base": 0.0011430680751800537
+}

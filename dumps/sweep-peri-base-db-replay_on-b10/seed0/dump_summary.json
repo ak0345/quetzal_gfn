@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-peri-base-db-replay_on-b10/checkpoints/last.ckpt",
+  "name": "sweep-peri-base-db-replay_on-b10",
+  "seed": 0,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "guacamol",
+  "reward_smiles": "perindopril_rings",
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4636,
+    "parse_rate": 0.9272,
+    "n_parse_fail": 364,
+    "uniqueness": 0.9978429680759275,
+    "log_reward_mean": -2.576220363609949,
+    "log_reward_top1": -0.7142473459243774,
+    "log_reward_top10": -0.7833994865417481,
+    "log_reward_top100": -0.9084192818403244,
+    "atom_stability": 0.8550444731622572,
+    "mol_stability": 0.026
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4641,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.9976298211592329,
+    "log_reward_mean": -2.5867711941221363,
+    "log_reward_top1": -0.7142473459243774,
+    "log_reward_top10": -0.7965441644191742,
+    "log_reward_top100": -0.9132395958900452,
+    "atom_stability": 0.8544708614082822,
+    "mol_stability": 0.027,
+    "reused_from": "dumps/_base/peri/seed0"
+  },
+  "base_reused_from": "dumps/_base/peri/seed0",
+  "fcd": {
+    "guided_vs_base": 0.03675113348296577,
+    "guided_vs_ref": 4.336797781338035,
+    "base_vs_ref": 4.427940043898772
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 17.341449416220883,
+      "base_vs_ref": 17.336867902219353
+    },
+    "logP": {
+      "guided_vs_ref": 0.33579769831406403,
+      "base_vs_ref": 0.3454792781913382
+    },
+    "TPSA": {
+      "guided_vs_ref": 4.377273044003452,
+      "base_vs_ref": 4.483138573152338
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.3358621225194125,
+      "base_vs_ref": 1.35384421460892
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.20754702329594488,
+      "base_vs_ref": 0.202071924154277
+    }
+  },
+  "top10_delta_guided_minus_base": 0.013144677877426125
+}

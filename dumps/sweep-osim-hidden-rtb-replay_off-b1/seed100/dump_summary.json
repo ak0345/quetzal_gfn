@@ -1,0 +1,68 @@
+{
+  "ckpt": "logs/quetzal-gfn/sweep-osim-hidden-rtb-replay_off-b1/checkpoints/last.ckpt",
+  "name": "sweep-osim-hidden-rtb-replay_off-b1",
+  "seed": 100,
+  "n_requested": 5000,
+  "diff_steps": 18,
+  "guide_source": "ema",
+  "reward": "guacamol",
+  "reward_smiles": "hard_osimertinib",
+  "reward_benchmark": "perindopril_rings",
+  "sample_temp": 2.0,
+  "guided": {
+    "n_generated": 5000,
+    "n_valid_smiles": 4667,
+    "parse_rate": 0.9334,
+    "n_parse_fail": 333,
+    "uniqueness": 0.9978572959074352,
+    "log_reward_mean": -3.0316671575893546,
+    "log_reward_top1": -0.21445539593696594,
+    "log_reward_top10": -0.22944592535495759,
+    "log_reward_top100": -0.2724005204439163,
+    "atom_stability": 0.8548043999514848,
+    "mol_stability": 0.0254
+  },
+  "base": {
+    "n_generated": null,
+    "n_valid_smiles": 4673,
+    "parse_rate": null,
+    "n_parse_fail": null,
+    "uniqueness": 0.99700406591055,
+    "log_reward_mean": -3.0434217853704815,
+    "log_reward_top1": -0.21445539593696594,
+    "log_reward_top10": -0.23209359347820283,
+    "log_reward_top100": -0.2752979502081871,
+    "atom_stability": 0.8524100641490594,
+    "mol_stability": 0.0244,
+    "reused_from": "dumps/_base/osim/seed100"
+  },
+  "base_reused_from": "dumps/_base/osim/seed100",
+  "fcd": {
+    "guided_vs_base": 0.11785680772932494,
+    "guided_vs_ref": 3.918893893415799,
+    "base_vs_ref": 4.144421280014981
+  },
+  "descriptor_wasserstein": {
+    "MW": {
+      "guided_vs_ref": 14.292841054081855,
+      "base_vs_ref": 14.531700820158363
+    },
+    "logP": {
+      "guided_vs_ref": 0.34714528615684614,
+      "base_vs_ref": 0.35281490813909705
+    },
+    "TPSA": {
+      "guided_vs_ref": 3.375481262052711,
+      "base_vs_ref": 3.5680180530708334
+    },
+    "n_heavy": {
+      "guided_vs_ref": 1.0865256053139052,
+      "base_vs_ref": 1.193341536486197
+    },
+    "n_rings": {
+      "guided_vs_ref": 0.1938335118920077,
+      "base_vs_ref": 0.1916588487053284
+    }
+  },
+  "top10_delta_guided_minus_base": 0.0026476681232452393
+}
