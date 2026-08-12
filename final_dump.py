@@ -3,21 +3,6 @@
 final_dump.py -- STANDALONE, SEEDED molecule dump + full metric/plot suite from
 a trained guide checkpoint. Superset of final_dump.py.
 
-Adds over final_dump.py:
-  * --seed : seeds torch / numpy / random so 3 seeds give statistical spread.
-  * --ref_smiles : a GEOM reference SMILES .txt for distributional comparison:
-        - FCD (guided_vs_base, guided_vs_ref, base_vs_ref) if an FCD backend exists
-        - descriptor histograms (MW, logP, TPSA, #heavy atoms, #rings) guided vs
-          base vs GEOM ref, with per-descriptor Wasserstein distance to ref.
-  * EDM atom_stability + mol_stability (via the repo's edm_metrics.check_stability)
-    for guided AND base, so the GEOM-benchmark axis is reported directly.
-  * every per-checkpoint plot: reward_hist, descriptor_grid, stability_bar.
-  * writes everything under <out_dir>/ (one dir PER checkpoint-seed; the shell
-    passes out_dir=.../<ckpt_name>/seed<k>).
-
-diff_steps defaults to the checkpoint's own value (18 from training). Do NOT
-lower it for speed -- low values produce degenerate mols and hang bond perception.
-
 Outputs (in --out_dir):
   guided_smiles.txt, base_smiles.txt
   guided_rewards.npy, base_rewards.npy
@@ -40,6 +25,8 @@ import random
 import argparse
 
 import numpy as np
+import numpy as np, scipy
+if not hasattr(scipy, "histogram"): scipy.histogram = np.histogram
 import torch
 
 
