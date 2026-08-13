@@ -903,41 +903,283 @@ def build_reward_smiles(cfg):
 
 
 # ----------------------- Standalone diagnostic -----------------------
-
 if __name__ == "__main__":
-    """Quick self-test. Run:  python reward_fn.py
-    Verifies xTB, MMFF, and RDKit conversion on a known-good molecule."""
-    DEBUG_REWARD = True
+    """Self-test: exercise EVERY reward kind on a small panel of molecules.
 
-    # Build ethanol with 3D coords as a sanity molecule
-    m = Chem.MolFromSmiles("CCO")
-    m = Chem.AddHs(m)
-    AllChem.EmbedMolecule(m, randomSeed=0)
-    AllChem.MMFFOptimizeMolecule(m)
+    Run:  python reward_fn.py
+          python reward_fn.py --quick      (skip force/xTB, the slow ones)
+          python reward_fn.py --bench hard_fexofenadine
 
-    Z = [a.GetAtomicNum() for a in m.GetAtoms()]
-    conf = m.GetConformer()
-    xyz = np.array([list(conf.GetAtomPosition(i)) for i in range(m.GetNumAtoms())])
+    Checks, per reward kind:
+      * does build_reward(cfg) construct without raising?
+      * does it return a finite float on a real molecule?
+      * does it return exactly invalid_logr on garbage?      (floor behaviour)
+      * does it VARY across chemically different molecules?  (a reward with zero
+        spread is a DEAD AXIS -- nothing can be steered toward it, so this is the
+        single most useful thing the self-test can tell you)
+      * does build_reward_smiles(cfg) agree with build_reward(cfg)?
 
-    class FakeMol:
-        atoms = np.array(Z)
-        coords = xyz
+    Exit code is non-zero if any kind errors out, so this is usable in CI.
+    """
+    import sys
+    import argparse
+    import traceback
 
-    fake = FakeMol()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--quick", action="store_true",
+                    help="skip the force rewards (xTB/MMFF are slow)")
+    ap.add_argument("--bench", default="hard_osimertinib",
+                    help="guacamol benchmark for the guacamol / component kinds")
+    ap.add_argument("--bench_key", default="osimertinib",
+                    help="friendly key for guacamol_component")
+    ap.add_argument("--verbose", action="store_true")
+    args = ap.parse_args()
 
-    print("=== RDKit conversion ===")
-    rd = mol_to_rdkit(fake)
-    print("OK:", Chem.MolToSmiles(rd) if rd else "FAILED")
+    DEBUG_REWARD = args.verbose
+    if not args.verbose:
+        from rdkit import RDLogger
+        RDLogger.DisableLog("rdApp.*")     # Morgan deprecation spam drowns the table
 
-    print("=== MMFF force ===")
-    try:
-        print("RMSF (MMFF):", _force_rmsf_mmff(fake))
-    except Exception as e:
-        print("MMFF FAILED:", e)
+    # ---------------- the molecule panel ----------------
+    # Deliberately spread out: tiny/large, aliphatic/aromatic, N-rich/N-free,
+    # halogenated, and a real drug. If a reward can't tell these apart, it can't
+    # tell anything apart.
+    PANEL = [
+        ("ethanol",      "CCO"),
+        ("benzene",      "c1ccccc1"),
+        ("caffeine",     "Cn1cnc2c1c(=O)n(C)c(=O)n2C"),
+        ("aspirin",      "CC(=O)Oc1ccccc1C(=O)O"),
+        ("gefitinib-ish", "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1"),
+        ("adenine",      "Nc1ncnc2[nH]cnc12"),
+        ("hexane",       "CCCCCC"),
+    ]
 
-    print("=== xTB force ===")
-    try:
-        print("RMSF (xTB):", _force_rmsf_xtb(fake))
-    except Exception as e:
-        print("xTB FAILED:", type(e).__name__, e)
-        print("  -> If ImportError, run: pip install xtb ase")
+    def make_fake(smi, seed=0xF00D):
+        """SMILES -> a Quetzal-like object with .atoms (atomic numbers, incl H)
+        and .coords (Angstrom). Same construction the trainer's molecules have."""
+        m = Chem.MolFromSmiles(smi)
+        if m is None:
+            return None
+        m = Chem.AddHs(m)
+        if AllChem.EmbedMolecule(m, randomSeed=seed) != 0:
+            p = AllChem.ETKDGv3(); p.randomSeed = seed; p.useRandomCoords = True
+            if AllChem.EmbedMolecule(m, p) != 0:
+                return None
+        try:
+            AllChem.MMFFOptimizeMolecule(m)
+        except Exception:
+            pass
+        conf = m.GetConformer()
+
+        class _FakeMol:
+            atoms = np.array([a.GetAtomicNum() for a in m.GetAtoms()], dtype=int)
+            coords = np.array([list(conf.GetAtomPosition(i))
+                               for i in range(m.GetNumAtoms())], dtype=float)
+        return _FakeMol()
+
+    print("=" * 72)
+    print("building 3D conformers for the test panel")
+    mols = []
+    for name, smi in PANEL:
+        fm = make_fake(smi)
+        if fm is None:
+            print(f"  [skip] {name}: could not embed")
+            continue
+        mols.append((name, smi, fm))
+        print(f"  {name:<14} {len(fm.atoms):>3} atoms (with H)")
+    if not mols:
+        sys.exit("FATAL: could not embed any test molecule -- is RDKit working?")
+
+    # ---------------- 3D -> RDKit round trip ----------------
+    # Everything graph-based flows through mol_to_rdkit, so if bond perception is
+    # broken every reward below silently returns the floor.
+    print("\n" + "=" * 72)
+    print("mol_to_rdkit (3D bond perception) -- the gate every reward passes through")
+    n_ok = 0
+    for name, smi, fm in mols:
+        rd = mol_to_rdkit(fm)
+        if rd is None:
+            print(f"  {name:<14} FAILED")
+            continue
+        got = Chem.MolToSmiles(Chem.RemoveHs(rd))
+        want = Chem.MolToSmiles(Chem.MolFromSmiles(smi))
+        match = "match" if got == want else f"DIFFERENT -> {got}"
+        print(f"  {name:<14} {match}")
+        n_ok += 1
+    print(f"  {n_ok}/{len(mols)} recovered")
+    if n_ok == 0:
+        sys.exit("FATAL: mol_to_rdkit failed on everything; check rdkit version "
+                 "(2023.03.3 expected)")
+
+    # ---------------- config bag ----------------
+    class Cfg:
+        """Plain attribute bag. build_reward only reads the fields its kind needs,
+        so setting all of them is harmless."""
+        def __init__(self, **kw):
+            self.reward = None
+            self.invalid_logr = -5.0
+            self.reward_target = 0.0
+            self.reward_sigma = 1.0
+            self.reward_smiles = None
+            self.reward_formula = None
+            self.reward_benchmark = args.bench_key
+            self.reward_component = 0
+            self.force_method = "mmff"
+            self.dataset = "geom"
+            self.__dict__.update(kw)
+
+    # (label, cfg kwargs, needs_guacamol)
+    CASES = [
+        ("qed",              dict(reward="qed"), False),
+        ("logp(t=2,s=1)",    dict(reward="logp", reward_target=2.0, reward_sigma=1.0), False),
+        ("tpsa(t=60,s=20)",  dict(reward="tpsa", reward_target=60.0, reward_sigma=20.0), False),
+        ("similarity(aspirin)",
+                             dict(reward="similarity",
+                                  reward_smiles="CC(=O)Oc1ccccc1C(=O)O",
+                                  reward_target=0.3), False),
+        ("isomer(C6H6)",     dict(reward="isomer", reward_formula="C6H6"), False),
+        ("nitrogen_count",   dict(reward="nitrogen_count"), False),
+        ("atom_stability",   dict(reward="atom_stability", dataset="geom"), False),
+        (f"guacamol({args.bench})",
+                             dict(reward="guacamol", reward_smiles=args.bench), True),
+    ]
+    # one case per component of the MPO, so a dead axis shows up by name
+    for ci in range(4):
+        CASES.append((f"gcomp({args.bench_key}:{ci})",
+                      dict(reward="guacamol_component",
+                           reward_benchmark=args.bench_key,
+                           reward_component=ci), True))
+    if not args.quick:
+        CASES.append(("force(mmff)", dict(reward="force", force_method="mmff"), False))
+        CASES.append(("force(xtb)",  dict(reward="force", force_method="xtb"), False))
+
+    # An EMPTY molecule is the one input mol_to_rdkit rejects unconditionally
+    # ("empty molecule after truncation"), so it is the honest floor probe.
+    # Two overlapping carbons is NOT garbage -- bond perception happily returns
+    # ethane and the reward scores it, which is correct behaviour.
+    GARBAGE = type("Garbage", (), {"atoms": np.array([], dtype=int),
+                                   "coords": np.zeros((0, 3))})()
+
+    print("\n" + "=" * 72)
+    print("reward kinds  (spread = std over the panel; ~0 means a DEAD AXIS)")
+    print("=" * 72)
+    hdr = f"{'reward':<26} {'built':>6} {'finite':>7} {'floor':>6} {'mean':>9} {'spread':>8}"
+    print(hdr); print("-" * len(hdr))
+
+    failures, dead_axes, all_floor = [], [], []
+    per_kind_values = {}
+
+    for label, kw, needs_gc in CASES:
+        cfg = Cfg(**kw)
+        try:
+            fn = build_reward(cfg)
+        except Exception as e:
+            if needs_gc and isinstance(e, (ImportError, ModuleNotFoundError)):
+                print(f"{label:<26} {'skip':>6}   (guacamol not installed)")
+                continue
+            print(f"{label:<26} {'FAIL':>6}   {type(e).__name__}: {e}")
+            failures.append((label, f"build: {type(e).__name__}: {e}"))
+            if args.verbose:
+                traceback.print_exc()
+            continue
+
+        vals, errs = [], []
+        for name, smi, fm in mols:
+            try:
+                v = float(fn(fm))
+            except Exception as e:
+                errs.append(f"{name}: {type(e).__name__}: {e}")
+                v = float("nan")
+            vals.append(v)
+        arr = np.array(vals, float)
+        finite = np.isfinite(arr)
+        above_floor = finite & (arr > cfg.invalid_logr + 1e-9)
+
+        # garbage must land exactly on the floor, not raise and not score
+        try:
+            gv = float(fn(GARBAGE))
+            floor_ok = abs(gv - cfg.invalid_logr) < 1e-6 or not np.isfinite(gv)
+        except Exception as e:
+            floor_ok = False
+            errs.append(f"garbage raised: {type(e).__name__}: {e}")
+
+        spread = float(np.std(arr[above_floor])) if above_floor.sum() > 1 else 0.0
+        mean = float(np.mean(arr[finite])) if finite.any() else float("nan")
+        if above_floor.sum() == 0:
+            note = "   <-- ALL FLOOR (scorer unavailable or every mol rejected)"
+        elif above_floor.sum() > 1 and spread < 0.05:
+            note = "   <-- DEAD AXIS"
+        else:
+            note = ""
+        print(f"{label:<26} {'ok':>6} {int(finite.sum()):>4}/{len(arr):<2} "
+              f"{('ok' if floor_ok else 'BAD'):>6} {mean:>9.3f} {spread:>8.4f}{note}")
+
+        per_kind_values[label] = dict(zip([m[0] for m in mols], vals))
+        if errs:
+            failures.append((label, "; ".join(errs[:3])))
+            for e in errs[:3]:
+                print(f"    error: {e}")
+        if not floor_ok:
+            failures.append((label, f"garbage did not return invalid_logr "
+                                    f"({cfg.invalid_logr})"))
+        if above_floor.sum() == 0:
+            all_floor.append(label)
+        elif above_floor.sum() > 1 and spread < 0.05:
+            dead_axes.append(label)
+
+    # ---------------- build_reward vs build_reward_smiles ----------------
+    # The SMILES path is what smiles_hist.py and the harvest scripts use. If it
+    # disagrees with the 3D path, every offline analysis is scoring something
+    # different from what training optimised.
+    print("\n" + "=" * 72)
+    print("build_reward (3D) vs build_reward_smiles (SMILES) -- must agree")
+    print("=" * 72)
+    for label, kw, needs_gc in CASES:
+        if kw.get("reward") in ("force", "atom_stability"):
+            continue          # genuinely geometry-dependent; no SMILES analogue
+        cfg = Cfg(**kw)
+        try:
+            f3d = build_reward(cfg)
+            fsm = build_reward_smiles(cfg)
+        except Exception:
+            continue
+        diffs = []
+        for name, smi, fm in mols:
+            try:
+                a, b = float(f3d(fm)), float(fsm(smi))
+            except Exception:
+                continue
+            if np.isfinite(a) and np.isfinite(b) and abs(a - b) > 1e-4:
+                diffs.append(f"{name}: 3D={a:.4f} smi={b:.4f}")
+        if diffs:
+            print(f"  {label:<26} MISMATCH  {diffs[0]}"
+                  + (f"  (+{len(diffs)-1} more)" if len(diffs) > 1 else ""))
+            failures.append((label, f"3D/SMILES mismatch: {diffs[0]}"))
+        else:
+            print(f"  {label:<26} agree")
+
+    # ---------------- per-molecule detail for the headline reward ----------------
+    key = next((k for k in per_kind_values if k.startswith("guacamol(")), None)
+    if key:
+        print("\n" + "=" * 72)
+        print(f"per-molecule scores: {key}")
+        for name, v in sorted(per_kind_values[key].items(), key=lambda kv: -kv[1]):
+            print(f"  {name:<14} {v:>8.4f}")
+
+    # ---------------- verdict ----------------
+    print("\n" + "=" * 72)
+    if dead_axes:
+        print(f"DEAD AXES ({len(dead_axes)}): {', '.join(dead_axes)}")
+        print("  These have no spread over the panel. A guide cannot steer them --")
+        print("  a flat result on one of these is expected, not a training bug.")
+    if all_floor:
+        print(f"ALL AT FLOOR ({len(all_floor)}): {', '.join(all_floor)}")
+        print("  Nothing scored above invalid_logr. Usually a missing optional")
+        print("  dependency (edm_metrics, guacamol, xtb) rather than chemistry --")
+        print("  re-run with --verbose to see the swallowed exception.")
+    if failures:
+        print(f"\nFAILURES ({len(failures)}):")
+        for label, msg in failures:
+            print(f"  {label}: {msg}")
+        sys.exit(1)
+    print("all reward kinds built, scored, floored and round-tripped cleanly")
