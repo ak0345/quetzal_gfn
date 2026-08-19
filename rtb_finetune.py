@@ -182,6 +182,7 @@ class FTConfig:
     record_smiles: bool = True
     record_coords: bool = True
     record_shard_size: int = 5000
+    record_reset: bool = False          # archive an existing log and start at i=0
 
     # ---- eval ----
     eval_n: int = 0                     # per-epoch policy-vs-prior eval (0 = off)
@@ -384,8 +385,16 @@ class MoleculeRecorder:
         self._buf_idx, self._buf_atoms, self._buf_coords = [], [], []
         self._shard_id = len(glob.glob(os.path.join(self.dir, "shard_*.pt")))
         if meta is not None:
-            with open(os.path.join(self.dir, "meta.json"), "w") as f:
-                json.dump(meta, f, indent=2)
+            # meta.json describes the run that STARTED the log; later resumes
+            # append instead, so the provenance of a mixed log is recoverable
+            meta_path = os.path.join(self.dir, "meta.json")
+            if not os.path.exists(meta_path):
+                with open(meta_path, "w") as f:
+                    json.dump(meta, f, indent=2)
+            with open(os.path.join(self.dir, "runs.jsonl"), "a") as f:
+                f.write(json.dumps({"started": datetime.datetime.now().isoformat(
+                    timespec="seconds"), "count_at_start": self.count,
+                    "config": meta}) + "\n")
 
     def add_batch(self, mols, log_rewards, epoch, step, smiles=None):
         lrs = log_rewards.detach().cpu().tolist() if torch.is_tensor(log_rewards) \
@@ -416,6 +425,55 @@ class MoleculeRecorder:
                     "coords": self._buf_coords}, path)
         self._shard_id += 1
         self._buf_idx, self._buf_atoms, self._buf_coords = [], [], []
+
+    def rollback_to(self, n):
+        """Drop every record with index >= n, so the log matches the checkpoint.
+
+        On resume Lightning replays the batches between the last checkpoint and
+        the crash. Those molecules are already in the log, so without this they
+        would be appended twice under different indices, and any budget slice
+        taken on `i` would spend oracle calls on duplicates.
+        """
+        self._buf_idx, self._buf_atoms, self._buf_coords = [], [], []
+        if n >= self.count:
+            if n > self.count:
+                print(f"[record] WARNING: checkpoint expects {n} molecules but the "
+                      f"log has {self.count}; records are missing from the log")
+            return 0
+        dropped = self.count - n
+        try:
+            self.fh.close()
+        except Exception:
+            pass
+        tmp = self.jsonl_path + ".tmp"
+        with open(self.jsonl_path) as src, open(tmp, "w") as dst:
+            for i, line in enumerate(src):
+                if i >= n:
+                    break
+                dst.write(line)
+        os.replace(tmp, self.jsonl_path)
+        self.fh = open(self.jsonl_path, "a", buffering=1)
+        kept = 0
+        for path in sorted(glob.glob(os.path.join(self.dir, "shard_*.pt"))):
+            try:
+                sh = torch.load(path, map_location="cpu", weights_only=False)
+            except Exception:
+                print(f"[record] unreadable shard {path}, removing")
+                os.remove(path)
+                continue
+            keep = [j for j, gi in enumerate(sh["idx"]) if gi < n]
+            if not keep:
+                os.remove(path)
+                continue
+            if len(keep) < len(sh["idx"]):
+                torch.save({k: [sh[k][j] for j in keep]
+                            for k in ("idx", "atoms", "coords")}, path)
+            kept += 1
+        self._shard_id = kept
+        self.count = n
+        print(f"[record] rolled back {dropped} molecule(s) not covered by the "
+              f"checkpoint; resuming at i={n}")
+        return dropped
 
     def close(self):
         self.flush()
@@ -765,14 +823,18 @@ class LitRTBFineTune(L.LightningModule):
         return opt
 
     def on_save_checkpoint(self, ck):
+        if self.recorder is not None:
+            # flush first so the shards on disk match the count we record
+            self.recorder.flush()
+            ck["record_count"] = self.recorder.count
         if not self.cfg.save_trainable_only:
             return
         keep = {n for n, p in self.named_parameters() if p.requires_grad}
         ck["state_dict"] = {k: v for k, v in ck["state_dict"].items() if k in keep}
 
     def on_load_checkpoint(self, ck):
-        # trainable-only checkpoints: backfill frozen weights from the already
-        # constructed modules so Lightning's strict load succeeds
+        if self.recorder is not None and "record_count" in ck:
+            self.recorder.rollback_to(int(ck["record_count"]))
         sd = ck.get("state_dict", {})
         cur = self.state_dict()
         for k, v in cur.items():
@@ -811,6 +873,37 @@ def parse_args():
 
 if __name__ == "__main__":
     cfg = parse_args()
+
+    ckpt_dir = f"logs/quetzal-ft/{cfg.name}/checkpoints"
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    def latest_ckpt(d):
+        ck = glob.glob(os.path.join(d, "*.ckpt"))
+        return max(ck, key=os.path.getmtime) if ck else None
+
+    resume_path = cfg.resume_path or latest_ckpt(ckpt_dir)
+    cfg.resume_path = resume_path
+    print(f"Resuming from: {resume_path}")
+
+    # a fresh training run appending to an existing log would interleave two
+    # runs under one continuous index, and any budget slice would mix them
+    if resume_path is None and cfg.record_dir:
+        jl = os.path.join(cfg.record_dir, "molecules.jsonl")
+        if os.path.exists(jl) and os.path.getsize(jl) > 0:
+            if cfg.record_reset:
+                stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                bak = os.path.join(cfg.record_dir, f"archive-{stamp}")
+                os.makedirs(bak, exist_ok=True)
+                for p in glob.glob(os.path.join(cfg.record_dir, "molecules.jsonl")) \
+                       + glob.glob(os.path.join(cfg.record_dir, "shard_*.pt")):
+                    os.rename(p, os.path.join(bak, os.path.basename(p)))
+                print(f"[record] archived previous log to {bak}")
+            else:
+                raise SystemExit(
+                    f"[record] {jl} exists but there is no checkpoint to resume "
+                    f"from. Appending would mix two runs under one index. Pass "
+                    f"--record_reset to archive it, or --resume_path to resume.")
+
     lit = LitRTBFineTune(asdict(cfg))
 
     @rank_zero_only
@@ -826,18 +919,8 @@ if __name__ == "__main__":
 
     print_once()
 
-    ckpt_dir = f"logs/quetzal-ft/{cfg.name}/checkpoints"
-    os.makedirs(ckpt_dir, exist_ok=True)
-
     wandb_logger = WandbLogger(save_dir="logs", project="quetzal-ft", entity=entity,
                                name=cfg.name, config=asdict(cfg), offline=False)
-
-    def latest_ckpt(d):
-        ck = glob.glob(os.path.join(d, "*.ckpt"))
-        return max(ck, key=os.path.getmtime) if ck else None
-
-    resume_path = cfg.resume_path or latest_ckpt(ckpt_dir)
-    print(f"Resuming from: {resume_path}")
 
     ckpt_cb = ModelCheckpoint(
         dirpath=ckpt_dir,

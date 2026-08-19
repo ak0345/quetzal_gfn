@@ -1,0 +1,4 @@
+python rtb_finetune.py --name rtb-full-peri-b10-final --quetzal_ckpt geom.ckpt --train_module train.py --objective rtb --sample_temp 1.0 --rand_eps 0.0 --logz_lr 1e-2 --grad_clip 1.0 --record_dir /workspace/oracle_gfn_mols/rtb-full-peri-b10-final --finetune_scope full --reward guacamol --reward_smiles perindopril_rings --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 --bsz 12 --steps_per_epoch 100 --max_epochs 10 --lr 5e-6 --trunk_lr_mult 0.1 --logp_grad_frac 0.25
+
+
+#python rtb_finetune.py --name rtb-full-osim-b10-final --quetzal_ckpt geom.ckpt --train_module train.py --objective rtb --sample_temp 1.0 --rand_eps 0.0 --logz_lr 1e-2 --grad_clip 1.0 --record_dir /workspace/oracle_gfn_mols/rtb-full-osim-b10-final --finetune_scope full --reward guacamol --reward_smiles hard_osimertinib --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 --bsz 12 --steps_per_epoch 100 --max_epochs 12 --lr 5e-6 --trunk_lr_mult 0.1 --logp_grad_frac 0.25
