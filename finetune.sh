@@ -31,9 +31,9 @@ set -uo pipefail
 REPO="${REPO:-/workspace/quetzal}"
 CKPT="${CKPT:-geom.ckpt}"
 TRAIN_MODULE="${TRAIN_MODULE:-train.py}"
-MOLROOT="${MOLROOT:-/workspace/oracle_gfn_mols}"
+MOLROOT="${MOLROOT:-oracle_gfn_mols}"
 
-BENCH="${BENCH:-perindopril_rings}"
+BENCH="${BENCH:-hard_osimertinib}"
 BETA="${BETA:-10}"
 BETA_START="${BETA_START:-2}"
 BETA_ANNEAL="${BETA_ANNEAL:-4}"
@@ -180,17 +180,17 @@ fi
 # rank-r linear guide. Sweeping r against the full-rank proj run gives steering
 # vs capacity on an axis the norm-limited residual guide never explored.
 
-if [[ "$RUN_LORA" == "1" ]]; then
-  for R in $LORA_RANKS; do
-    run rtb-proj-lora${R}-peri-b$BETA \
-      --finetune_scope proj \
-      --lora_rank "$R" --lora_targets proj_logits --lora_alpha 16 \
-      --reward guacamol --reward_smiles "$BENCH" \
-      --reward_beta "$BETA" --beta_start "$BETA_START" --beta_anneal_epochs "$BETA_ANNEAL" \
-      --bsz "$BSZ" --steps_per_epoch "$STEPS" --max_epochs "$EPOCHS" \
-      --lr 1e-4
-  done
-fi
+# if [[ "$RUN_LORA" == "1" ]]; then
+#   for R in $LORA_RANKS; do
+#     run rtb-proj-lora${R}-peri-b$BETA \
+#       --finetune_scope proj \
+#       --lora_rank "$R" --lora_targets proj_logits --lora_alpha 16 \
+#       --reward guacamol --reward_smiles "$BENCH" \
+#       --reward_beta "$BETA" --beta_start "$BETA_START" --beta_anneal_epochs "$BETA_ANNEAL" \
+#       --bsz "$BSZ" --steps_per_epoch "$STEPS" --max_epochs "$EPOCHS" \
+#       --lr 1e-4
+#   done
+# fi
 
 # ---------------------------- 4. harvest -------------------------------------
 say "================================================================"
@@ -200,7 +200,7 @@ if [[ "$DRY" == "1" ]]; then
 fi
 
 DIRS=()
-for d in "$MOLROOT"/rtb-*; do
+for d in "$MOLROOT"/rtb-*-osim*; do
   [[ -f "$d/molecules.jsonl" ]] && DIRS+=("$d")
 done
 
@@ -217,6 +217,10 @@ else
     --topk 1,10,100 \
     --out "$RESULTS/${BENCH}_budget${BUDGET}.json" \
     --csv "$RESULTS/${BENCH}_budget${BUDGET}.csv" \
+    --plots_dir "$RESULTS/plots" \
+    --extended \
+    --ref_smiles "GEOM_smiles/geom_drugs_smiles.txt" \
+    --ref_limit "$BUDGET" \
     --dump_best "$RESULTS/best" 2>&1 | tee -a "$MAIN_LOG"
   say "results -> $RESULTS/${BENCH}_budget${BUDGET}.{json,csv}"
 fi
