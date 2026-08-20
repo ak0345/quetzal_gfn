@@ -1,29 +1,33 @@
 """
-ablate_hidden_guide.py -- localize WHY the hidden guide fails to steer, along the
-causal chain:  delta magnitude -> logit change -> atom flip -> reward movement.
+Localise where a hidden guide's effect stops, along the causal chain
 
-Both RTB and DB hidden-guide runs plateau (loss stuck in hundreds) and leave
-guided ~= base. This battery decides between the two hypotheses:
-  (H1) delta stays ~0  -> gradient never grew it -> TRAINING problem (beta/objective)
-  (H2) delta is large but reward-neutral -> guide moves logits the WRONG WAY
+    delta magnitude -> logit change -> atom flip -> reward movement.
 
-Loads a single trained hidden-guide LitGFlowNet checkpoint (like final_dump.py).
+Separates two explanations for a hidden-guide run that leaves the guided sampler
+at the prior: the delta never grew, which is a training problem, or the delta is
+large but reward-neutral, meaning the guide moves the logits in an unhelpful
+direction.
 
-Ablations:
-  A1. DELTA MAGNITUDE: ||delta(h)|| over sampled states (relative to ||h||).
-      ~0 => H1 (untrained delta). large => proceed to A2.
-  A2. LOGIT CHANGE: || guided_logits(h) - proj_logits(h) || over states, and the
-      change on the runner-up logit (the ceiling-relevant quantity).
-  A3. ATOM FLIP RATE by prior-gap bin: does the guide flip the sampled atom vs the
-      prior argmax? Broken down by the prior's top-1 gap (the ceiling test).
-  A4. REWARD MOVEMENT: guided vs base top-k reward on freshly sampled molecules
-      (the bottom line).
-  A5. TERMINAL-TARGET SCALE: for the checkpoint's beta, what is beta*logR's spread?
-      If ~hundreds, the DB terminal target is unfittable -> loss floor -> H1.
+Takes one trained hidden-guide checkpoint via --ckpt.
+
+Probes:
+  A1. DELTA MAGNITUDE      ||delta(h)|| over sampled states, relative to ||h||.
+                           Near zero points at training; large sends you to A2.
+  A2. LOGIT CHANGE         ||guided_logits(h) - proj_logits(h)|| over states, and
+                           the change on the runner-up logit, which is what has
+                           to move for a decision to change.
+  A3. ATOM FLIP RATE       whether the guide changes the sampled atom, binned by
+                           the prior's top-1 margin.
+  A4. REWARD MOVEMENT      guided against prior top-k reward on freshly sampled
+                           molecules.
+  A5. TERMINAL-TARGET SCALE the spread of beta*logR at the checkpoint's beta. A
+                           spread in the hundreds makes the DB terminal target
+                           unfittable by the flow head, which floors the loss.
 
 Usage:
-  python ablate_hidden_guide.py --ckpt .../osim-hidden-db-beta10/checkpoints/last.ckpt \
-      --n 400 --out_dir dumps/ablate_hidden
+  python ablations/ablate_hidden_guide.py \
+      --ckpt logs/quetzal-gfn/sweep-osim-hidden-db-replay_off-b10/checkpoints/last.ckpt \
+      --out_dir results/ablations/hidden-guide
 """
 import os
 import json

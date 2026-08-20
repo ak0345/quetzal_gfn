@@ -1,6 +1,11 @@
 """
-reward_hist.py -- Sample molecules from a SMILES file, score them with a reward
-function from reward_fn.py, and plot the log-reward distribution.
+Sample molecules from a SMILES file, score them with a reward function from
+reward_fn.py, and plot the log-reward distribution.
+
+Run against a corpus such as GEOM-Drugs, this shows how much variation an
+objective has over reachable molecules. A component whose log-reward is
+near-constant is a dead axis: it offers no gradient, so a guide trained against
+it is flat by construction rather than under-trained.
 
 Produces one figure with three panels:
     (1) histogram of log-rewards
@@ -13,18 +18,18 @@ log_reward(smiles) -> float. We plot that log-reward directly.
 Usage examples
 --------------
 # QED reward on a random 5000-molecule sample:
-python reward_hist.py --smiles data/geom_train_smiles.txt --n 5000 --reward qed
+python smiles_hist.py --smiles reference/geom_drugs_smiles.txt --n 5000 --reward qed
 
 # One component of the Osimertinib MPO benchmark:
-python reward_hist.py --smiles data/geom_train_smiles.txt --n 2000 \
+python smiles_hist.py --smiles reference/geom_drugs_smiles.txt --n 2000 \
     --reward guacamol_component --benchmark osimertinib --component logP
 
 # logP Gaussian reward with explicit target/sigma:
-python reward_hist.py --smiles mols.txt --n 1000 --reward logp \
+python smiles_hist.py --smiles mols.txt --n 1000 --reward logp \
     --target 2.5 --sigma 1.0
 
 # Similarity to a target molecule:
-python reward_hist.py --smiles mols.txt --n 1000 --reward similarity \
+python smiles_hist.py --smiles mols.txt --n 1000 --reward similarity \
     --reward-smiles "CC(=O)Oc1ccccc1C(=O)O"
 """
 

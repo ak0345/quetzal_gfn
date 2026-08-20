@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
 """
-final_dump_composed.py -- STANDALONE, SEEDED dump for a COMPOSED sampler
-(compose.py / Composer), across operators {linear, product, harmonic}.
+Seeded dump for a composed sampler (gflow_multi.Composer), across the
+operators {linear, product, harmonic}.
 
-For each operator it:
-  * runs compose.py's OWN rich reporting (reward histograms, KDE, ternary,
-    hypervolume, slope test, per-component summary) by calling its main() with
-    the right MultiConfig flags -> writes into <out_dir>/compose_native/;
-  * ALSO emits an aggregator-compatible dump_summary.json (same schema as
-    final_dump2.py) so composed runs fold into master_table.csv alongside the
-    single-guide sweep. The "guided" block = the COMPOSED sampler scored on the
-    PRIMARY eval reward (first in eval_rewards, e.g. osim_MPO); "base" = frozen
-    Quetzal on the same reward. Adds EDM atom/mol stability + descriptor-vs-GEOM
-    (reused from final_dump2) for the composed and base sets.
+For each operator it does two things:
 
-The composed run's "name" (for the aggregator) is:
+  * runs gflow_multi's own reporting -- reward histograms, KDE, ternary plot,
+    hypervolume, slope test, per-component summary -- by calling its main() with
+    the matching MultiConfig flags, writing into <out_dir>/compose_native/;
+
+  * emits a dump_summary.json in the same schema as final_dump.py, so composed
+    runs fold into master_table.csv alongside the single-guide sweep. There the
+    "guided" block is the composed sampler scored on the primary eval reward
+    (the first entry of --eval_rewards, e.g. osim_MPO) and "base" is the frozen
+    prior on the same reward, with EDM atom/mol stability and the
+    descriptor-versus-GEOM distances added for both.
+
+A composed run is named
+
     compose-<benchkey>-<operator>-k<K>-b<compose_beta>
-so parse_name in aggregate_dumps.py treats it as family=compose.
+
+which parse_name in aggregate_dumps.py reads as family=compose.
 
 Usage:
   python final_dump_composed.py \
@@ -26,8 +30,8 @@ Usage:
     --eval_rewards "guacamol:hard_osimertinib=osim_MPO,gcomp:osimertinib:0=c0,gcomp:osimertinib:1=c1,gcomp:osimertinib:2=c2,gcomp:osimertinib:3=c3" \
     --operators linear,product,harmonic \
     --bench_key osimertinib \
-    --n 5000 --seed 0 --ref_smiles geom_ref.smi --dataset geom \
-    --out_dir dumps_composed/osim
+    --n 5000 --seed 0 --ref_smiles reference/geom_drugs_smiles.txt \
+    --dataset geom --out_dir results/dumps_composed/osim
 """
 import os
 import json
@@ -38,7 +42,7 @@ import numpy as np, scipy
 if not hasattr(scipy, "histogram"): scipy.histogram = np.histogram
 import torch
 
-# reuse the metric helpers from final_dump2 (stability, descriptors, FCD wrapper)
+# the metric helpers from final_dump (stability, descriptors, FCD wrapper)
 import final_dump as fd2
 
 
@@ -50,7 +54,7 @@ OPERATOR_FLAGS = {
 
 
 def build_multiconfig(args, operator, product_kind, out_dir_native, seed):
-    """Construct a compose.py MultiConfig for one operator, matching CLI flags."""
+    """Construct a gflow_multi MultiConfig for one operator, from the CLI flags."""
     from gflow_multi import MultiConfig
     return MultiConfig(
         quetzal_ckpt=args.quetzal_ckpt,
@@ -158,7 +162,7 @@ def dump_one_operator(args, operator):
     b = score_block(base_mols, base_scored[primary], args.dataset,
                     args.ref_smiles, pe, " base")
 
-    # ---- FCD + descriptors vs GEOM (reuse final_dump2 helpers) ----
+    # ---- FCD and descriptors against GEOM ----
     ref_smiles = fd2.load_ref_smiles(args.ref_smiles, limit=args.ref_limit)
     fcd = {}
     if not args.no_fcd:
@@ -245,7 +249,7 @@ def dump_one_operator(args, operator):
     print(f"[compose] {operator}: composed top10={summary.get('top10_delta_guided_minus_base')} "
           f"atom_stab={g['block']['atom_stability']} -> {out_dir}", flush=True)
 
-    # ---- ALSO run compose.py's OWN rich reporting for this operator ----
+    # ---- run gflow_multi's own reporting for this operator ----
     if not args.skip_native_plots:
         try:
             _run_compose_native(args, op, pk, native_dir)
@@ -254,7 +258,8 @@ def dump_one_operator(args, operator):
 
 
 def _run_compose_native(args, op, pk, native_dir):
-    """Invoke compose.py's main() via its argv parser so its full plot/report
+    """Invoke gflow_multi's main() through its argv parser so its full plot and
+    report
     suite (hist, kde, ternary, hypervolume, slope) is produced natively."""
     import sys, runpy
     argv = [

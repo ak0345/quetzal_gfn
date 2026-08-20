@@ -1,35 +1,33 @@
 """
-ablate_guide.py -- diagnose WHY the logit-injection guide barely moves the
-distribution off the frozen Quetzal prior.
+Effect size of a logit-injection guide, measured against the levers that
+control it.
 
-The composed histogram shows a weak-but-correctly-signed tilt: the guided sampler
-piles a little extra mass on the very best molecules but the bulk stays at prior.
-This harness isolates the cause by measuring the EFFECT SIZE of the guide as a
-function of the levers that control it, using the exact building blocks from
-gflow.py / compose.py so behaviour matches training.
+The guided sampler puts a little extra mass on the best molecules while the bulk
+of the distribution stays at the prior. This harness isolates where that comes
+from, reusing the building blocks from gflow.py and gflow_multi.py so the
+behaviour matches training.
 
-It answers four questions, each a separate ablation:
+Four ablations:
 
-  A. RESIDUAL MAGNITUDE. Is guide(h) even large enough to move the softmax?
-     Measures ||guide(h)|| vs ||prior_logits|| and the per-step KL(guided||prior)
-     at eval time. If the residual is ~100x smaller than the prior logits, the
-     policy is prior no matter what the guide "learned".
+  A. RESIDUAL MAGNITUDE. Is guide(h) large enough to move the softmax? Reports
+     ||guide(h)|| against ||prior_logits|| and the per-step KL(guided||prior) at
+     evaluation time. A residual orders of magnitude below the prior's logits
+     leaves the policy at the prior whatever the guide learned.
 
-  B. BETA (tilt strength). Re-scale the guide residual by a factor s (a proxy for
-     retraining at higher beta: p_prior*R^beta corresponds to a larger residual).
-     A working guide's guided-vs-base separation grows monotonically with s. If
-     it saturates or stays flat, the guide's DIRECTION is right but its learned
-     MAGNITUDE is the ceiling -> retrain at higher beta / lower weight-splitting.
+  B. RESIDUAL SCALE. Multiply the trained residual by a constant factor s at
+     sampling time, as a proxy for retraining at higher beta. Effect size rises
+     to a maximum near 4x and then falls, with the mean reward shift turning
+     negative: past that point the sampler leaves the region where its outputs
+     remain valid faster than it gains reward.
 
-  C. SINGLE vs COMPOSED dilution. Measure each single guide's effect size alone,
-     then the composed one. If singles are strong but composed is weak, the
-     geometric-mean product is being dragged toward prior by the weakest guide
-     (one near-prior component flattens the whole product).
+  C. SINGLE VERSUS COMPOSED. Each guide's effect size sampled alone, then the
+     composed sampler's. Strong singles with a weak composition mean the product
+     operator is being dragged toward the prior by its least-active component.
 
-  D. TEMPERATURE / RAND_EPS. Re-sample at a few (sample_temp, rand_eps) to confirm
-     eval-time settings aren't themselves washing out the guide.
+  D. SAMPLING SETTINGS. Re-sample at several (sample_temp, rand_eps) pairs, to
+     confirm evaluation-time settings are not themselves washing the guide out.
 
-Usage (mirror your compose.py flags for the guides):
+Usage (the guide flags mirror gflow_multi's):
     python ablate_guide.py \
         --guide_ckpts "logs/.../comp0/last.ckpt,logs/.../comp1/last.ckpt,..." \
         --guide_labels "c0,c1,c2,c3" \

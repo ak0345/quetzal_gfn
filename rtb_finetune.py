@@ -1,6 +1,11 @@
 """
-RTB (Relative Trajectory Balance) fine-tuning of Quetzal ITSELF, as a capacity
-control for the saturated-prior-ceiling result.
+Relative-trajectory-balance fine-tuning of the Quetzal prior's own weights, as
+the capacity control for the guide results.
+
+If the achievable score were set by how small the guides are, updating the model
+itself should relax it. These scopes put the guides, LoRA adapters and full
+fine-tuning on a single capacity axis rather than treating them as competing
+methods.
 
 FINE-TUNING SCOPES  (--finetune_scope)
 --------------------------------------
@@ -9,8 +14,8 @@ FINE-TUNING SCOPES  (--finetune_scope)
           atom sequence is IDENTICAL between policy and prior. Therefore
           p(coords | atoms) cancels exactly in the RTB ratio and the atom-only
           log-ratio is EXACT. This is the minimal unbounded-capacity
-          intervention on precisely the object the ceiling argument is about.
-          >>> This is the scientifically clean comparison to the guides. <<<
+          intervention on exactly the object the guides act on, and the clean
+          comparison to them.
 
   atom  : proj_logits + the encode1 trunk (blocks1, embeddings, wpe) (optionally LoRA-wrapped).
           Now z_prefix drifts, so p(coords|atoms) is NO LONGER identical and
@@ -19,27 +24,29 @@ FINE-TUNING SCOPES  (--finetune_scope)
           the size of the violation is measurable rather than assumed.
 
   full  : everything, including blocks2 and the coordinate diffusion MLP.
-          Same approximation as `atom`, larger drift. Use for "can the model
-          do it at all", not for a clean RTB claim.
+          The same approximation as `atom` with larger drift. Results here
+          should be read as approximate-ratio results.
 
 An exact treatment of the coordinate term would need the ODE log-density
 (`Quetzal.log_density`, 120 steps of jacrev) inside the training loop, which is
-not affordable per batch. `proj` sidesteps the issue entirely
+not affordable per batch. `proj` avoids the issue entirely.
 
 LoRA  (--lora_rank > 0)
 -----------------------
-Wraps matched nn.Linear modules with a zero-init low-rank adapter (identity at
-step 0, like the guide's zero-init residual). Sweeping rank in {4,16,64,full}
-turns "does it steer" from a binary into a curve of steering vs. trainable
-parameter norm -- a much stronger figure than "guided ~= base".
+Wraps matched nn.Linear modules with a zero-init low-rank adapter, so training
+starts at the unmodified model exactly as the guide's zero-init residual does.
+Applied to proj_logits, rank r induces delta_logits = (alpha/r) B A h, which is
+a rank-r linear guide; sweeping r therefore traverses a capacity axis the
+norm-limited residual guide never explores, and turns "does it steer" into a
+curve against trainable parameter count.
 
 MOLECULE RECORDING  (--record_dir)
 ----------------------------------
 Every molecule generated during training is appended, in generation order, to
-`molecules.jsonl` with its global index `i` (= oracle call number), epoch, step,
-canonical SMILES and log-reward. 3D structures go to `shard_*.pt`. This makes
-`harvest_eval.py` possible WITHOUT retraining: take the first N records, dedupe,
-rescore, report top-k. See harvest_eval.py.
+`molecules.jsonl` with its global index `i` -- the oracle call number -- along
+with epoch, step, canonical SMILES and log-reward. 3D structures go to
+`shard_*.pt`. This is what lets harvest_eval.py score a run at any budget
+without retraining: take the first N records, dedupe, rescore, report top-k.
 
 Note on budget arithmetic: bsz * steps_per_epoch molecules per epoch. At the
 defaults (128 * 100) that is 12,800 -- so a 10,000-call budget is reached
@@ -68,7 +75,7 @@ python rtb_finetune.py --name ft-full-osim-b10 --finetune_scope full \
   --reward guacamol --reward_smiles hard_osimertinib --reward_beta 10 \
   --record_dir records/ft-full-osim-b10
 
-# dense-reward sanity check (should move if the loop works at all)
+# dense-reward sanity check; this must move if the loop works at all
 python rtb_finetune.py --name ft-proj-nitrogen-b10 --finetune_scope proj \
   --reward nitrogen_count --reward_beta 10 --record_dir records/ft-proj-n-b10
 """
@@ -518,8 +525,8 @@ class LitRTBFineTune(L.LightningModule):
 
         n_train, train_names = set_trainable(self.policy, self.cfg.finetune_scope)
 
-        # a LoRA adapter outside the scope's allow-list stays frozen and does
-        # nothing -- silently halving your intended capacity dial
+        # A LoRA adapter outside the scope's allow-list stays frozen and does
+        # nothing, silently reducing the intended capacity.
         orphan = [n for n in self.lora_names
                   if not any(t.startswith(n.split(".")[0]) or n.startswith(t)
                              for t in train_names)]
@@ -809,8 +816,10 @@ class LitRTBFineTune(L.LightningModule):
                            "lr": self.cfg.lr * self.cfg.trunk_lr_mult,
                            "weight_decay": self.cfg.wd})
         if self.cfg.objective == "rtb":
-            # logZ must move much faster than the weights or it lags the reward
-            # scale and the residual looks flat for the wrong reason.
+            # logZ must move much faster than the weights. A lagging logZ
+            # offsets every trajectory's residual by the same amount, which
+            # displaces all log-probabilities in a common direction without
+            # distinguishing between trajectories.
             groups.append({"params": [self.logZ], "lr": self.cfg.logz_lr,
                            "weight_decay": 0.0})
 

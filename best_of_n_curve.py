@@ -1,31 +1,34 @@
 #!/usr/bin/env python3
 """
-best_of_n_curve.py -- does the frozen prior's best-of-N keep climbing past the
+Best-of-N curves: does the frozen prior's best-of-N keep climbing past the
 dataset baseline, or does it plateau?
 
-WHY THIS IS THE EXPERIMENT. The ceiling claim currently reads "steering is
-bounded by the pretraining distribution", but the evidence is that every
-configuration lands near GEOM's best-of-10k. That is compatible with two very
-different states of the world:
+WHY IT MATTERS. Every configuration landing near GEOM's best-of-10k is
+compatible with two different states of the world:
 
-  (a) the high-reward region is ABSENT from the prior -- no amount of sampling
+  (a) the high-reward region is ABSENT from the prior. No amount of sampling
       finds it, and steering cannot reach what the prior does not contain;
-  (b) the high-reward region is PRESENT but rare -- the prior would find it
-      with enough draws, and steering failed to concentrate mass on it.
+  (b) the high-reward region is PRESENT but rare. The prior would find it given
+      enough draws, and steering failed to concentrate mass on it.
 
-Both produce the same flat benchmark table. They imply opposite conclusions:
+Both produce the same flat benchmark table, and they imply opposite conclusions:
 (a) says change the prior, (b) says the steering objective is not doing its job.
 Best-of-N separates them. If the prior's curve keeps rising through the dataset
-line as N grows, we are in world (b) and the honest claim is about SEARCH
-failure, not distributional support.
+line as N grows, the honest claim is about search rather than distributional
+support.
 
-WHAT IT COMPUTES. Given a pool of scored molecules, the expected best-of-n (and
-top-k mean) for n on a log grid, estimated by resampling n draws from the pool
-WITHOUT replacement, B times. This is an estimate of what a fresh n-sample run
-would have produced, with a percentile interval -- not a single lucky draw.
-Note the estimate is only trustworthy for n well below the pool size: at n=N
-every resample returns the whole pool and the interval collapses to zero width
-while the point estimate is still just one sample's worth of information.
+This is also where the matched-budget dataset baseline itself comes from: the
+GEOM-Drugs curve read at n = 10,000.
+
+WHAT IT COMPUTES. Given a pool of scored molecules, the expected best-of-n and
+top-k mean for n on a log grid, estimated by resampling n draws from the pool
+without replacement, B times. That estimates what a fresh n-sample run would
+have produced, with a percentile interval, rather than reporting a single lucky
+draw.
+
+The estimate is only trustworthy for n well below the pool size. At n = N every
+resample returns the whole pool, so the interval collapses to zero width while
+the point estimate still carries only one sample's worth of information.
 
 MODES
   --generate      roll N molecules from the frozen Quetzal prior and score them

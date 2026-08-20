@@ -1,18 +1,26 @@
+# Datasets and preprocessed tensors (see `python geom.py` / `python data_smiles.py`)
 data/
-figures/
-__pycache__/
-wandb/
-logs/
-trash/
-slurm/
-samples/
-checkpoints/
-*.pt
 *.npy
-.gitignore
-.ipynb_checkpoints/
-*_logs/
-runlogs_guac/
-*.log
+
+# Model weights (downloaded from Hugging Face, see the README)
+checkpoints/
 *.ckpt
-https:/
+*.pt
+
+# Training and driver output
+logs/
+slurm/
+wandb/
+*.log
+runlogs_guac/
+*_logs/
+
+# Generated samples and figures not committed as results
+samples/
+figures/
+
+# Scratch
+trash/
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store

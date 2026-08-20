@@ -43,19 +43,20 @@ i.e. a *tilted* distribution, NOT p_i(x) ∝ R_i(x). Two ways to compose:
     and mix with the reward-sharpened policy Eq. (31):
         p_M,F ∝ ( sum_i omega_i ( Z_i u_i(s) p_{i,F}(.|s) )^(1/beta_i) )^beta
     Set the outer sharpening beta with --compose_beta (default: mean of beta_i).
-    This form is only derived for LINEAR in the paper; product/contrast still use
-    the tilted-space operators above (we warn if you combine reward-space + non-linear).
+    This form is only derived for the linear operator; product and contrast
+    still use the tilted-space operators above, and combining reward space with
+    a non-linear operator warns.
 ------------------------------------------------------------------------------
 Outputs: overlaid reward histograms (base / guide_i / composed), a 2D density
 plot (reward_1 vs reward_2) showing base vs single-guides vs composed sitting in
 the compromise region, per-reward summary stats, and optional FCD vs a reference.
 
 ------------------------------------------------------------------------------
-PRECONFIGURED (this file):
-  Compose the 4 Osimertinib COMPONENT guides (each trained reward-free on one
-  component of the Osimertinib MPO), then SCORE every sample on the FULL
-  Osimertinib MPO aggregate the guides never saw -- plus the 4 components for
-  the multi-objective diagnostics. Just run `python compose.py`.
+DEFAULTS (this file):
+  Composes the Osimertinib component guides, each trained on one leaf scorer of
+  the Osimertinib MPO objective, then scores every sample on the full assembled
+  objective the guides never saw, plus each component for the multi-objective
+  diagnostics.
 """
 import os
 import json
@@ -182,9 +183,9 @@ def _extract_guide(sd, d_model, cfg: MultiConfig, source="ema", proj_logits=None
     """Rebuild a guide from a LitGFlowNet checkpoint state_dict.
 
     Detects the guide TYPE from the checkpoint keys:
-      * HiddenGuide (fix B): keys 'guide[_ema.module].delta.*' / '._proj.*'
-        -> rebuild HiddenGuide(d_model, proj_logits, ...). Needs proj_logits.
-      * LogitGuide (optionally in TempGainGuide): 'net.*' keys -> original path.
+      * HiddenGuide: keys 'guide[_ema.module].delta.*' / '._proj.*', rebuilt as
+        HiddenGuide(d_model, proj_logits, ...). Requires proj_logits.
+      * LogitGuide, optionally wrapped in a TempGainGuide: 'net.*' keys.
     """
     if source == "ema":
         base_prefix = "guide_ema.module."
@@ -266,10 +267,10 @@ def _extract_guide(sd, d_model, cfg: MultiConfig, source="ema", proj_logits=None
         return {k[len(prefix):]: v for k, v in sd.items()
                 if k.startswith(prefix) and "n_averaged" not in k}
 
-    # attempt 1: direct (pre-patch layout)
+    # attempt 1: a bare LogitGuide, whose params sit directly under the prefix
     sub = strip(base_prefix)
-    # if the LogitGuide params (net.*) aren't present, this is the nested
-    # (post-patch) layout: base lives under base_prefix + 'guide.'
+    # No net.* params means a TempGainGuide, whose base guide is nested one
+    # level deeper under base_prefix + 'guide.'
     if not any(kk.startswith("net.") for kk in sub):
         nested = base_prefix + "guide."
         sub_nested = strip(nested)
@@ -1278,7 +1279,7 @@ def main():
     comp_names = [n for n, _ in comp.eval_rewards]
     # pick the component rewards in the same order as the guides/weights.
     # convention: the eval_rewards after the first (aggregate) are the components.
-    # adjust the slice if your eval_rewards ordering differs.
+    # adjust the slice if the eval_rewards ordering differs.
     component_names = comp_names[1:1+len(weights)]
     if len(component_names) == len(weights):
         comp_scored = comp.score(comp_mols)   # dict name -> [N] log-reward

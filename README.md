@@ -1,139 +1,458 @@
-# Quetzal
+# Steerability Limits in Frozen 3D Molecular Priors
 
-[![arXiv](https://img.shields.io/badge/arXiv%20paper-2505.13791-b31b1b.svg)](https://arxiv.org/abs/2505.13791)&nbsp;
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/aspuru-guzik-group/quetzal/blob/main/colab.ipynb)
+Code and experiments for **A Characterization of Steerability Limits in Frozen 3D
+Molecular Priors** ([paper](paper/steerability-limits-frozen-3d-priors.pdf)).
 
-Code for [Scalable Autoregressive 3D Molecule Generation](https://arxiv.org/abs/2505.13791)
+We steer [Quetzal](https://arxiv.org/abs/2505.13791), an autoregressive 3D
+molecular model trained on GEOM-Drugs, toward GuacaMol MPO objectives across 51
+configurations spanning three guide architectures, four training objectives and
+four fine-tuning scopes. All of them reach approximately the score obtained by
+drawing the same number of molecules from GEOM-Drugs itself, and on Perindopril
+MPO none exceeds it.
 
-![Animated Molecule Generation](figures/anim.gif)
+The molecules generated are nonetheless valid, unique and novel relative to the
+training corpus (novelty > 0.9, mean nearest-neighbour similarity ≈ 0.42), so
+what is bounded is the *achievable score*, not the chemistry explored. The
+pattern tracks the confidence of the converged prior: 72% of atom decisions have
+a top-1 logit margin above 8, and that confidence grows along the construction
+path — guides change the sampled atom in up to 89% of states at the first
+position, but under 10% by the fifth. Fine-tuning the prior's own weights does
+not overcome the bound; full-weight fine-tuning is the lowest-scoring
+configuration tested.
 
-Setup:
+---
+
+## Contents
+
+- [Repository layout](#repository-layout)
+- [Setup](#setup)
+- [Downloads](#downloads)
+- [Running the experiments](#running-the-experiments)
+- [Configuration reference](#configuration-reference)
+- [Where the numbers come from](#where-the-numbers-come-from)
+- [Known issues and excluded runs](#known-issues-and-excluded-runs)
+- [Pretraining the prior](#pretraining-the-prior)
+- [Citation](#citation)
+
+---
+
+## Repository layout
+
+Python modules live flat at the repository root, because they import each other
+by bare module name (`from chem import Molecule`). Run them from the root, or
+let `scripts/common.sh` set `PYTHONPATH` for you.
+
 ```
-mamba create -f environment.yml
+├── paper/                    the paper this code accompanies
+├── scripts/                  experiment drivers, one per stage — start here
+│   ├── common.sh             shared paths, throttling, checkpoint resolution
+│   ├── 01_train_guides.sh    the guide sweep
+│   ├── 02_train_components.sh per-component guides + the stability control
+│   ├── 03_finetune.sh        RTB fine-tuning of the prior's own weights
+│   ├── 04_dump_guides.sh     sample and score every guide checkpoint
+│   ├── 05_dump_composed.sh   the composition track
+│   ├── 06_flip_diagnostics.sh the coupled-flip diagnostic
+│   ├── 07_ablations.sh       mechanism ablations
+│   ├── 08_analysis.sh        harvest, best-of-N baselines, reward histograms
+│   ├── run_all.sh            all eight stages in order
+│   └── prior/                SLURM helpers for pretraining Quetzal itself
+├── ablations/                the mechanism probes stage 7 drives
+├── notebooks/                play.ipynb, colab.ipynb
+├── reference/                GEOM-Drugs SMILES corpus, frozen-prior samples
+├── results/                  generated artifacts (see Downloads)
+│
+├── Steering                  gflow.py, gflow_multi.py, rtb_finetune.py
+│                             hidden_guide.py, tempgain_guide.py, replay_buffer.py
+├── Rewards                   reward_fn.py
+├── Scoring                   final_dump.py, final_dump_composed.py,
+│                             aggregate_dumps.py, harvest_eval.py,
+│                             harvest_analysis.py, best_of_n_curve.py,
+│                             smiles_hist.py, edm_metrics.py, metrics.py
+└── The prior (upstream)      model.py, train.py, attention.py, simple_mlp.py,
+                              chem.py, datasets.py, pack.py, qm9.py, geom.py,
+                              data_smiles.py, generate.py, density.py, hdeco.py,
+                              draw.py
 ```
 
-This environment was prepared via:
-```
-mamba create -n quetzal python=3.10
+### The three entry points
+
+| Script | Trains | Intervenes on | Ratio |
+|---|---|---|---|
+| `gflow.py` | a small guide network | `p_atom` logits, prior frozen | exact |
+| `gflow_multi.py` | nothing (inference only) | composes trained guides | — |
+| `rtb_finetune.py` | the prior's own weights | `proj_logits` / trunk / everything | exact under `proj`, approximate otherwise |
+
+---
+
+## Setup
+
+```bash
+mamba env create -f environment.yml
 mamba activate quetzal
-mamba install c-compiler cxx-compiler # needed for torch.compile
-pip install torch==2.6 lightning==2.5.0.post0 rdkit==2023.03.3 jupyter notebook ipywidgets scipy "numpy<2" matplotlib tqdm pandas wandb==0.18.7 seaborn msgpack py3Dmol torchdata
 ```
 
-`rdkit==2023.03.3` is important to have consistent validity metrics
+**RDKit is pinned at 2023.03.3 and this matters.** Later versions change bond
+perception, and therefore every validity, stability and 3D-to-SMILES conversion
+figure reported here. On the QM9 100k training set, 2023.03.3 gives 99.99%
+validity where later versions give 94.78%.
 
-Optional W&B setup:
-```
+Optional Weights & Biases setup — training runs log there by default:
+
+```bash
 export WANDB_ENTITY=<your_entity>
 ```
 
-Create a folder for SLURM logs (required):
-```
-mkdir -p slurm
-```
+The environment also needs `guacamol==0.5.5` (the MPO objectives) and
+`fcd==1.2.2` (the distributional distance); both are in `environment.yml`.
 
-Download checkpoint(s):
-```
+---
+
+## Downloads
+
+### The frozen prior
+
+Every experiment in this repository trains on top of the GEOM checkpoint from
+the original Quetzal release. The scripts expect it at `checkpoints/geom.ckpt`.
+
+```bash
 mkdir -p checkpoints
-cd checkpoints
-wget https://huggingface.co/auhcheng/quetzal/resolve/main/original.ckpt # best qm9 model
-wget https://huggingface.co/auhcheng/quetzal/resolve/main/geom.ckpt # best geom model
-```
-You can find the rest of the checkpoints for ablation studies [here](https://huggingface.co/auhcheng/quetzal/tree/main).
-
-Start playing around with the model in [`play.ipynb`](./play.ipynb)!
-
-## Training and evaluation
-
-Directly download the preprocessed data:
-```
-wget https://huggingface.co/auhcheng/quetzal/resolve/main/data.tar.gz
-tar -xf data.tar.gz
+wget -O checkpoints/geom.ckpt \
+  https://huggingface.co/auhcheng/quetzal/resolve/main/geom.ckpt
 ```
 
-Or download and preprocess data from raw:
-```
-python qm9.py # less than a minute
-python geom.py # 30-60 minutes, ~100G space
-```
+### Trained weights (guides and fine-tuned models)
 
-The command for training on QM9:
-```
-python train.py --name=qm9_run
-```
+All checkpoints produced by this work — every guide from the sweep, the
+per-component guides, and every fine-tuning scope — live in one repository:
 
-Add `--debug` for a progress bar. See `train.py` for more options.
+> **Weights:** `<PASTE HUGGING FACE LINK FOR ALL WEIGHTS HERE>`
 
-The command for evaluating on QM9: (change `--ckpt` if needed)
-```
-python generate.py --ckpt=logs/quetzal/qm9_run/checkpoints/epoch=1999-step=188000.ckpt --name=qm9_samples --device=cuda --num_samples=10000 --num_chunks=1 --diff_steps=60 --max_len=32
-python metrics.py --samples_dir=samples/gen/qm9_samples --dataset=qm9
+```bash
+# expected layout: logs/quetzal-gfn/<run name>/checkpoints/last.ckpt
+huggingface-cli download <REPO_ID> --local-dir logs/quetzal-gfn
 ```
 
-The command for training on GEOM:
+Set `CKPT_ROOT` if you put them somewhere else.
+
+### Generated molecules
+
+Two separate collections, because they are produced differently and are read by
+different tools.
+
+**Fine-tuning molecule streams** — every molecule generated during a
+`rtb_finetune.py` run, in generation order, with its oracle-call index. This is
+what `harvest_eval.py` slices at a budget.
+
+> **Fine-tuning molecules:** `<PASTE HUGGING FACE LINK FOR FINE-TUNING MOLECULES HERE>`
+
+```bash
+# expected layout: results/oracle_gfn_mols/<run name>/molecules.jsonl
+huggingface-cli download <REPO_ID> --repo-type dataset \
+  --local-dir results/oracle_gfn_mols
 ```
-sbatch 4run.sh
+
+**Guide molecule dumps** — 5,000 molecules per (guide checkpoint, seed), with
+the full metric suite, as produced by `final_dump.py`. This is what
+`aggregate_dumps.py` builds the master table from.
+
+> **Guide molecules:** `<PASTE HUGGING FACE LINK FOR GUIDE MOLECULES HERE>`
+
+```bash
+# expected layout: results/dumps/<run name>/seed<k>/dump_summary.json
+huggingface-cli download <REPO_ID> --repo-type dataset \
+  --local-dir results/dumps
 ```
 
-To continue the run for longer than 24 hours, simply run the same training command and make sure the run has the same `--name`, or pass `--resume_path=<path>.ckpt`.
+### The reference corpus
 
-The command for evaluating on GEOM:
-```
-python generate.py --ckpt=logs/quetzal/geom_run/checkpoints/epoch=201-step=734272.ckpt --name=geom_samples --device=cuda --num_samples=10000 --num_chunks=10 --diff_steps=120 --max_len=192
-python metrics.py --samples_dir=samples/gen/geom_samples --dataset=geom
-```
+`reference/geom_drugs_smiles.txt` (292k SMILES) ships with the repository and is
+used for three things: the FCD and descriptor comparisons, novelty and
+nearest-neighbour similarity, and the matched-budget dataset baseline itself.
+To regenerate it from the raw GEOM-Drugs release:
 
-To submit multiple jobs, specify commands in the `jobs` file, and run `./submit.sh` to submit each line in the `jobs` file.
-
-
-You can find almost all figures and how they were generated in `figures/`.
-First, download the generated samples:
-```
-wget https://huggingface.co/auhcheng/quetzal/resolve/main/samples.tar.gz
-tar -xf samples.tar.gz
-```
-The samples in `samples/` may be in .xyz format, or batched together as `Molecule` objects stored with their diffusion traces as `gen.pt`. You can see how these are loaded in `figures/uncurated/show.ipynb` or `figures/anim/anim.ipynb`.
-For automating conversion of html to png, `figures/render.py` may be useful.
-
-## Hydrogen decoration
-
-Evaluate Quetzal on hydrogen decoration:
-```
-python hdeco.py
-```
-The progress bar may appear to hang due to `torch.compile`.
-
-For OpenBabel+Hydride:
-```
-mamba install openbabel
-pip install hydride
-```
-Use `addH.sh`. You will need to prepare some `.xyz` files of the test set without hydrogens. You also need to rewrite `hdeco.py` to calculate RMSD for these generated `.xyz` files.
-
-For Olex2, you may find `run_olex2.scpt` useful.
-
-Some of the samples are flipped along the x/y/z axes, because the QM9 test data were reprocessed using PCA at some point.
-
-
-## Exact log-likelihood computation
-
-```
-python density.py --ckpt=checkpoints/original.ckpt --name=qm9_density
-python density.py --ckpt=checkpoints/geom.ckpt --name=geom_density
+```bash
+python data_smiles.py
 ```
 
 ---
 
-This work was made possible by several previous works, including but not limited to:
-- [Autoregressive Image Generation without Vector Quantization](https://arxiv.org/abs/2406.11838)
-- [nanoGPT](https://github.com/karpathy/nanoGPT)
-- [Elucidating Diffusion Models](https://arxiv.org/abs/2206.00364)
-- [Equivariant Diffusion Models](https://arxiv.org/abs/2203.17003)
-- [Symphony](https://openreview.net/forum?id=MIEnYtlGyv)
+## Running the experiments
 
-If you find any of the code in this repo useful, please cite!
+Every stage is independently resumable — a run whose checkpoint or summary
+already exists is skipped — so the pipeline can be interrupted and restarted.
+Every stage takes `DRY=1` to print its commands without executing them.
 
+```bash
+DRY=1 bash scripts/run_all.sh        # see what would run
+bash scripts/run_all.sh              # stages 1-8
+STAGES="4 8" bash scripts/run_all.sh # just these
 ```
+
+Smoke-test first. The full sequence is on the order of days on one A100:
+
+```bash
+SUBSET=1 REWARDS=nitrogen MAX_EPOCHS=1 N=200 SEEDS=0 bash scripts/run_all.sh
+```
+
+### The stages
+
+**1 — Guide sweep.** `scripts/01_train_guides.sh`
+Trains a guide on the frozen prior across guide architecture × objective ×
+replay × β × reward. Training only; scoring happens in stage 4, so a sweep runs
+to completion on one GPU and is measured afterwards. `SUBSET=1` (the default)
+runs the reduced grid; `SUBSET=0` runs the full 288-run matrix.
+
+**2 — Component guides and controls.** `scripts/02_train_components.sh`
+One guide per leaf scorer of an assembled MPO objective (the teachers stage 5
+composes), plus guides trained against EDM atom stability.
+
+**3 — Fine-tuning.** `scripts/03_finetune.sh`
+RTB fine-tuning of the prior's own weights at four scopes, reproducing all 21
+runs of Table 8. Begins with a sanity run on the dense nitrogen reward that
+gates the rest: if that does not move, the loop is broken and nothing below is
+interpretable. Molecules stream to `results/oracle_gfn_mols/<name>/molecules.jsonl`
+during training.
+
+**4 — Score the guides.** `scripts/04_dump_guides.sh`
+Samples N molecules per (checkpoint, seed) and computes the metric suite —
+reward histogram against the prior, FCD and descriptor distances to GEOM-Drugs,
+EDM atom/mol stability — then aggregates into `master_table.csv` with seed error
+bars. The frozen prior's samples are dumped once per reward family and reused by
+every guide on that reward, which is what makes the sweep affordable.
+
+**5 — Composition.** `scripts/05_dump_composed.sh`
+Mixes the component guides under linear, product and harmonic operators and
+scores the result on the assembled objective the components never saw.
+
+**6 — Flip diagnostics.** `scripts/06_flip_diagnostics.sh`
+The coupled-flip measurement, over every checkpoint. Trajectories are rolled by
+the frozen prior; at each state the prior's next-atom distribution is compared
+with the guided one on the identical state, using a shared uniform draw so the
+two samplers are coupled. Much cheaper than a dump — no molecules are scored.
+
+**7 — Mechanism ablations.** `scripts/07_ablations.sh`
+Margin binning, the residual-scale sweep, per-component effect sizes and weight
+skew, what the temperature and gain heads learned, rollout instrumentation, and
+training curves from W&B. Sections run individually:
+`bash scripts/07_ablations.sh ceiling`.
+
+**8 — Analysis.** `scripts/08_analysis.sh`
+Scores fine-tuning runs as goal-directed benchmarks at a fixed oracle budget,
+computes the best-of-N curves including the dataset baseline, and plots
+per-objective and per-component reward histograms. No GPU training.
+
+### Common overrides
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `QUETZAL_CKPT` | `checkpoints/geom.ckpt` | the frozen prior |
+| `CKPT_ROOT` | `logs/quetzal-gfn` | where run directories live |
+| `REF_SMILES` | `reference/geom_drugs_smiles.txt` | reference corpus |
+| `RESULTS_ROOT` | `results` | where artifacts are written |
+| `MAX_PARALLEL` | `1` | concurrent jobs on the shared GPU |
+| `NUM_GPUS` | `1` | for round-robin device pinning |
+| `DRY` | `0` | `1` prints commands without running them |
+
+Each concurrent training holds its own copy of the frozen prior in VRAM, so
+raising `MAX_PARALLEL` past what the GPU fits will OOM rather than run faster.
+
+---
+
+## Configuration reference
+
+### Guide architectures (`gflow.py`)
+
+Writing `h` for the trunk's hidden state and `W_proj` for the frozen atom-type
+head. All are zero-initialised in their final layer, so the guided logits equal
+the prior's exactly at initialisation.
+
+| Name | Form | Flags |
+|---|---|---|
+| `hidden` | `W_proj(h + δ(h))` | *(default)* |
+| `base` | `W_proj·h + g(h)` | `--no_use_hidden_guide` |
+| `tempgain` | `W_proj·h / T(h) + γ(h)·g(h)` | `--no_use_hidden_guide --use_prior_temp --use_residual_gain` |
+
+The hidden guide exists because `W_proj` amplifies displacements along the
+directions it uses: a δ of norm 0.1 produces a logit change of ≈46, against ≈1.3
+for an output residual of the same norm.
+
+### Objectives (`--objective`)
+
+`db` (detailed balance), `rtb` (relative trajectory balance), `revkl`, `fwdkl`.
+The KL branches exist to separate the loss from the guidance mechanism: they use
+an identical residual, trained instead by a direct KL to the tilted target.
+
+### Rewards (`--reward`)
+
+| Flag | What it scores |
+|---|---|
+| `--reward guacamol --reward_smiles <fn>` | an assembled GuacaMol MPO objective |
+| `--reward guacamol_component --reward_benchmark <b> --reward_component <i>` | one leaf scorer of that objective |
+| `--reward nitrogen_count` | fraction of heavy atoms that are nitrogen |
+| `--reward atom_stability` | EDM atom stability |
+
+`hard_osimertinib`, `hard_fexofenadine` and `perindopril_rings` are the
+benchmark function names used here. Invalid molecules return a fixed floor of
+−5 in log space, and the fraction of samples above that floor is reported
+alongside every result: a flat mean log-reward is otherwise ambiguous between a
+policy that is not steering and one whose samples are mostly invalid.
+
+The nitrogen reward is a positive control, not a design objective. It is dense
+(over 90% of samples score above the floor, against 2–6% for the assembled MPO
+objectives), monotone in a single atom-level decision, and decomposes over
+exactly the decisions a guide controls. It raises the top-10 nitrogen fraction
+from 0.452 to 0.983 (+0.791 ± 0.099), two to three orders of magnitude larger
+than the largest effect on either MPO benchmark — so the null results are not an
+implementation failure.
+
+### Fine-tuning scopes (`--finetune_scope`)
+
+| Scope | Updates | Params | Ratio |
+|---|---|---|---|
+| `proj` | `W_proj` only | 98,304 | **exact** |
+| `proj` + `--lora_rank r` | rank-`r` adapter on `W_proj` | `r(d+\|V\|)` | **exact** |
+| `atom` | `W_proj` + the `encode1` trunk | ≈43M | approximate |
+| `full` | everything, incl. the coordinate denoiser | ≈85M | approximate |
+
+Only `proj` preserves the exact cancellation of the coordinate term: with
+`enc1` and `enc2` frozen, `z_t` is the same function evaluated on the same
+argument under policy and prior, so every term of the coordinate log-ratio is
+identically zero. Under `atom` and `full` the trunk drifts and the atom-only
+ratio incurs a bias; `diag/zprefix_drift` logs its size so the violation is
+measured rather than assumed.
+
+---
+
+## Where the numbers come from
+
+| Paper item | Produced by |
+|---|---|
+| Fig. 1 — configurations vs dataset baseline | stage 8 `harvest` + stage 4 aggregate |
+| Fig. 2 — flip rate by sequence position | stage 6 → `_aggs/flip_by_position_t1.0_by_guide.csv` |
+| Fig. 3 — score vs trainable capacity | stage 8 `harvest`, `_results/*.csv` |
+| Fig. 5 — flip rate by logit margin | stage 7 `ceiling` |
+| Fig. 7 — residual scale sweep | stage 7 `guide` |
+| Fig. 8 — learned temperature | stage 7 `tempgain` |
+| Fig. 9 — component effects, composition weights | stage 7 `singles` |
+| Fig. 11 — distribution health during training | stage 8 `harvest --extended` |
+| Fig. 12 — per-component MPO scores | stage 8 `hists` |
+| Table 6 — guide sweep | stage 4 → `results/dumps/_aggregate/master_table.csv` |
+| Table 7 — flip diagnostics | stage 6 → `_aggs/flip_table_t1.0_by_guide.csv` |
+| Table 8 — fine-tuning at matched budget | stage 8 `harvest` |
+| Table 10 — nitrogen control | stage 4, `REWARDS=nitrogen` |
+| GEOM best-of-10k baseline | stage 8 `baseline` |
+
+### Metric conventions
+
+Guides and the dataset are post-hoc i.i.d. samples with no oracle-call order, so
+they are reported as **final top-10**. Fine-tuned runs record generation order
+and are reported as **AUC top-10 over 10,000 calls**. Since top-k is
+non-decreasing in n, AUC top-10 ≤ top-10, so that axis slightly favours the
+guides — as does their smaller sample (N=5,000 against N=10,000). `harvest_eval.py`
+emits both an unbounded (GuacaMol leaderboard parity) and a budgeted (PMO)
+number for this reason.
+
+The dataset baseline is applied at the same budget: the best of 10,000 molecules
+drawn from GEOM-Drugs. It is defined in the original GuacaMol benchmark but
+often omitted, and without it a reported score is difficult to distinguish from
+what a virtual screen would produce.
+
+---
+
+## Known issues and excluded runs
+
+**The temperature mechanism was inactive.** The `tempgain` runs reported in the
+paper used `T = 1 + (softplus(raw) − ln 2)`, which spans (0.307, ∞) and does not
+enforce `T ≥ 1`; the floor came from `clamp(T, min=1)` in the forward pass, which
+has zero gradient below its threshold. The learned `T` read off every trained
+checkpoint sits between 0.73 and 0.80 and is flat in the margin — a head stuck
+in the clamp's dead zone. The effective temperature was 1 at every state, so
+`TEMPGAIN` runs report a **gain-scaled residual guide**, not a test of prior
+softening. No conclusion rests on it; prior softening remains untested.
+`tempgain_guide.py` now parameterises `T` in log space, which is bidirectional
+and differentiable throughout, but **old checkpoints are not loadable into it**
+(the same weights mean a different `T`) — see `migrate_note()`.
+
+**Composition flow-route runs are excluded.** A set of composed-guide runs
+sampled through a flow-based routing path in which the residual was computed but
+never applied to the logits. Their rollout diagnostics show `‖g(h)‖ = 0.000`
+exactly at every state and a flip rate identically zero at every position. That
+is a delivery failure, not a bound, and is distinguishable only because stage 6
+measures delivery separately from the flip rate. Use `--route policy`.
+
+**Atom-stability runs are excluded as uninformative.** Molecular stability sits
+below 0.05 throughout, which is expected rather than anomalous: for 80–100
+heavy-atom molecules even a per-atom stability of 0.95 gives 0.95^80 ≈ 0.017.
+The objective is near-saturated under the prior and offers little gradient.
+
+**The `FULL` fine-tuning run is under budget.** Compute limits forced a batch
+size of 8 against 64 elsewhere, so at the same step count it reached 4,800 oracle
+calls rather than 38,400. Since top-k grows with the number of calls, it is not
+comparable on a capacity axis and is excluded from Fig. 3, though reported in
+Table 8.
+
+**Component 1 of the Osimertinib objective is a dead axis.** ECFP6 similarity has
+zero variance over reachable molecules, so a guide trained against it receives no
+gradient and its curve is flat by construction. `COMPONENTS` defaults to the
+three live axes. Stage 7's `ceiling` section is what identifies this.
+
+**Unresolved: the `atom`-scope run labels.** The recorded `meta.json` for
+`rtb-atom-osim-b10` and `rtb-atom-peri-b10` says `finetune_scope=full`, while
+the run names and Table 8 (43.1M trainable parameters) both say `atom`.
+`scripts/03_finetune.sh` uses `atom`, matching the name and the reported
+parameter count. If the recorded value is the accurate one, those two rows
+belong with `FULL` and the capacity axis needs re-running. Resolve before citing
+them as `ATOM`.
+
+**Fine-tuning runs are single-seed**, with margins of the same order as the seed
+variance observed in the guide sweep (seeds 0, 42, 100).
+
+---
+
+## Pretraining the prior
+
+The Quetzal model itself is upstream work
+([paper](https://arxiv.org/abs/2505.13791),
+[repo](https://github.com/aspuru-guzik-group/quetzal)); this project uses the
+released GEOM checkpoint and freezes it. Reproduce the pretraining only if you
+want to substitute a different prior — the most direct test of the paper's
+account.
+
+```bash
+python qm9.py          # < 1 minute
+python geom.py         # 30-60 minutes, ~100G
+
+python train.py --name=qm9_run
+sbatch scripts/prior/train_geom_slurm.sh
+
+python generate.py --ckpt=<ckpt> --name=geom_samples --device=cuda \
+  --num_samples=10000 --num_chunks=10 --diff_steps=120 --max_len=192
+python metrics.py --samples_dir=samples/gen/geom_samples --dataset=geom
+```
+
+To submit many jobs, list commands in `scripts/prior/jobs` and run
+`scripts/prior/submit.sh`. `hdeco.py` (hydrogen decoration),
+`scripts/prior/add_hydrogens_obabel.sh` (OpenBabel + Hydride),
+`scripts/prior/run_olex2.scpt` and `density.py` (exact log-likelihood) are also
+upstream utilities, unchanged.
+
+The architecture: a decoder-only transformer, 12 layers split into two stacks of
+6, hidden width 768, 12 heads, block size 512. `enc1` embeds atom types,
+coordinates and a Fourier featurisation of the coordinates and produces `h`, from
+which `W_proj ∈ R^(128×768)` (no bias) emits atom-type logits. `enc2` re-embeds
+the sampled atom type and produces the conditioner for the coordinate model — an
+adaptive-layernorm MLP of width 1536 and depth 6, trained as an EDM-style
+denoiser and sampled with 18 Heun steps. Atom types are atomic numbers over a
+vocabulary of 128, with `STOP = 0`, `PAD = 126`, `GEN = 127`. We use the
+exponential-moving-average weights throughout.
+
+---
+
+## Citation
+
+Please cite the Quetzal paper for the prior:
+
+```bibtex
 @article{cheng2025scalable,
   title={Scalable Autoregressive {3D} Molecule Generation},
   author={Cheng, Austin H and Sun, Chong and Aspuru-Guzik, Al{\'a}n},
@@ -141,3 +460,14 @@ If you find any of the code in this repo useful, please cite!
   year={2025}
 }
 ```
+
+This work builds on GuacaMol (Brown et al., 2019) for the objectives, PMO
+(Gao et al., 2022) for the budgeted metric, relative trajectory balance
+(Venkatraman et al., 2024), GFlowNets (Bengio et al., 2021), LoRA (Hu et al.,
+2021), residual RL (Johannink et al., 2018), GEOM-Drugs (Axelrod and
+Gomez-Bombarelli, 2020) and EDM (Hoogeboom et al., 2022) for the stability
+metrics. Full references are in the paper.
+
+## License
+
+See [LICENSE](LICENSE). The upstream Quetzal code retains its original license.

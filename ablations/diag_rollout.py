@@ -1,32 +1,33 @@
 """
-diag_rollout.py -- instrumented rollout diagnostics for WHY a guide can't steer.
-Complements diag_training_logs.py (which reads logged curves). This one re-runs
-guided rollouts with instrumentation, addressing:
+Instrumented rollout diagnostics, re-running guided rollouts to measure three
+things the aggregate metrics cannot distinguish. The companion,
+diag_training_logs.py, reads the logged training curves instead.
 
-  MECHANISM 2: reward flat over the TRAINING distribution (not just GEOM).
-    A component can vary over GEOM yet be flat over the molecules the guide
-    actually sampled during training. If every rollout molecule scored ~the same
-    reward, the terminal loss had no gradient regardless of convergence. We roll
-    the guide (and the prior) and report the reward SPREAD over what each actually
-    samples -- the distribution the training gradient really saw.
+  REWARD SPREAD OVER THE TRAINING DISTRIBUTION.
+    A component can vary over GEOM-Drugs and still be flat over the molecules the
+    guide actually sampled while training. If every rollout molecule scored about
+    the same, the terminal loss had no gradient regardless of whether it
+    converged. Rolls both the guide and the prior and reports the reward spread
+    over what each actually samples, which is the distribution the training
+    gradient saw.
 
-  MECHANISM 3: guide residual can't grow big enough to matter.
-    The residual is added to prior_logits of norm ~6841 with a zero-init output.
-    We measure, per guide, the residual norm distribution over sampled states and
-    the effective "logit headroom": how large the residual would NEED to be to
-    flip the median decision (gap to the prior's top-1). If residual << headroom
-    everywhere, the guide is structurally under-scaled -> needs a gain / different
-    injection point, not more training.
+  RESIDUAL AGAINST LOGIT HEADROOM.
+    Per guide, the distribution of residual norms over sampled states, against
+    the headroom: how large the residual would have to be to change the median
+    decision, i.e. the prior's top-1 margin there. A residual far below the
+    headroom everywhere is structurally under-scaled, which more training does
+    not fix.
 
-  MECHANISM 4: training-time temp/eps starved the signal.
-    sample_temp=2, rand_eps=0.2 at rollout means the guide trained on mostly
-    random trajectories. We compare the reward the guide's policy reaches at the
-    TRAINING settings (temp=2, eps=0.2) vs EVAL settings (temp=1, eps=0). If the
-    training rollouts were much lower-reward, the guide learned from a region far
-    from where reward is, so its terminal targets were mostly low/flat.
+  TRAINING VERSUS EVALUATION SAMPLING SETTINGS.
+    Rolling out at sample_temp 2 and rand_eps 0.2 trains the guide largely on
+    near-random trajectories. Compares the reward the policy reaches under the
+    training settings against the evaluation settings (temperature 1, no
+    epsilon). Much lower reward under the training settings means the guide
+    learned from a region away from where the reward is, so its terminal targets
+    were mostly flat.
 
 Usage:
-    python diag_rollout.py \
+    python ablations/diag_rollout.py \
         --guide_ckpts "...c0,...c1,...c2,...c3" --guide_labels "c0,c1,c2,c3" \
         --eval_rewards "gcomp:osimertinib:0=c0,gcomp:osimertinib:1=c1,gcomp:osimertinib:2=c2,gcomp:osimertinib:3=c3" \
         --route policy --n_samples 1000 \

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-aggregate_dumps.py -- collect every dump_summary.json under dumps/<name>/seed<k>/
-into a thesis master table + cross-model plots with seed error bars.
+Collect every dump_summary.json under <dumps_root>/<name>/seed<k>/ into one
+master table, with cross-model plots carrying seed error bars.
 
-Parses the model name (sweep-<reward>-<guide>-<objective>-replay_<on/off>-b<beta>
-and stability-geom-<guide>-db-b<beta>) into columns so you can pivot/plot by
-axis. Aggregates each metric as mean +/- std across seeds.
+Run names are parsed into columns -- sweep-<reward>-<guide>-<objective>-replay_
+<on|off>-b<beta>, stability-geom-<guide>-db-b<beta>, and the composed form --
+so the table can be pivoted along any experimental axis. Each metric is
+aggregated as mean and standard deviation across seeds.
 
 Outputs (in --out_dir):
   master_table.csv        one row per (name), all metrics mean/std across seeds
-  master_long.csv         one row per (name, seed) -- raw, for custom analysis
+  master_long.csv         one row per (name, seed), unaggregated
   steering_by_model.png   top10 delta (guided-base) per model, error bars = seed std
   stability_by_model.png  guided atom-stability per model (stability + all runs)
   fcd_vs_ref.png          guided/base FCD to GEOM per model
@@ -171,7 +172,7 @@ def main():
     n_base_as_row = 0
     for path in summary_paths:
         parts = path.split(os.sep)
-        # compose.py's NATIVE output dir (compose_native/) uses a different schema
+        # gflow_multi's own output dir (compose_native/) uses a different schema
         # (<tag>_summary.json, not dump_summary.json) -- skip if it sneaks in.
         if "compose_native" in parts:
             continue
