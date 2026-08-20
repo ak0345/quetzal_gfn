@@ -32,11 +32,11 @@ set -u  # error on unset vars; do NOT set -e (one failed run shouldn't kill the 
 # ----------------------------- knobs --------------------------------------
 SUBSET="${SUBSET:-1}"                 # 1 = reduced decisive grid, 0 = full 288
 QUETZAL_CKPT="${QUETZAL_CKPT:-geom.ckpt}"
-MAX_EPOCHS="${MAX_EPOCHS:-3}"
+MAX_EPOCHS="${MAX_EPOCHS:-5}"
 STEPS="${STEPS:-100}"
 LOGDIR="${LOGDIR:-sweep_logs}"
 DRY_RUN="${DRY_RUN:-0}"               # 1 = print commands only, don't train
-MAX_PARALLEL="${MAX_PARALLEL:-4}"    # concurrent runs on the single shared GPU
+MAX_PARALLEL="${MAX_PARALLEL:-3}"    # concurrent runs on the single shared GPU
 mkdir -p "$LOGDIR"
 
 # ----------------------------- axes ---------------------------------------
@@ -46,11 +46,11 @@ if [[ "$SUBSET" == "1" ]]; then
   #  - db + rtb are the live objectives; kl is the loss-independence check.
   #  - beta 1 & 10: low (fittable target) vs the standard high value.
   #  - replay on/off on db only (the leading branch).
-  GUIDES=(base)
-  OBJECTIVES=(db)
+  GUIDES=(tempgain)
+  OBJECTIVES=(db rtb)
   REPLAYS=(on off)
   BETAS=(1 10)
-  REWARDS=(osim fexo peri nitrogen)
+  REWARDS=(nitrogen osim peri)
 else
   GUIDES=(hidden tempgain base)
   OBJECTIVES=(db rtb revkl fwdkl)
