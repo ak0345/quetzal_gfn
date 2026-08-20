@@ -114,6 +114,8 @@ from model import Quetzal
 from chem import Molecule, GEN, STOP, PAD, QM9_MASK
 from metrics import compute_valid_unique
 from reward_fn import build_reward, mol_to_rdkit
+from hang_guard import (install_faulthandler, guarded_reward,
+                        stall_guard_callback)
 
 entity = os.getenv("WANDB_ENTITY")
 
@@ -206,6 +208,21 @@ class FTConfig:
     num_workers: int = 4
     save_interval_minutes: int = 15
     save_trainable_only: bool = True    # keep checkpoints small
+
+    # ---- hang guard (hang_guard.py) ----------------------------------------
+    # Reward evaluation runs on CPU and can block indefinitely: RDKit bond
+    # perception from 3D coordinates searches over bond orders and charges and
+    # can blow up on a dense or oversized structure, and an xtb subprocess has
+    # no timeout of its own. A blocked reward call freezes the run while the
+    # process stays alive holding its GPU.
+    guard_reward_timeout: float = 20.0   # per-molecule ceiling, 0 disables
+    guard_stall_minutes: float = 30.0    # watchdog on batch progress, 0 disables
+    # Floor every molecule above this many atoms WITHOUT scoring it. Off by
+    # default and it should stay off: flooring by size trains the policy away
+    # from that size, which changes the objective rather than guarding it.
+    # Only reach for this if a stack dump has shown large molecules to be the
+    # cause. 0 disables.
+    guard_max_atoms: int = 0
 
 
 # ============================ LoRA ==========================================
@@ -551,6 +568,13 @@ class LitRTBFineTune(L.LightningModule):
 
         self.logZ = nn.Parameter(torch.tensor(float(self.cfg.logz_init)))
         self.reward_fn = build_reward(self.cfg)
+        # see the note in gflow.py: a timed-out molecule is floored, and the
+        # count is logged so the guard cannot quietly reshape the reward
+        self.reward_fn = guarded_reward(
+            self.reward_fn,
+            seconds=self.cfg.guard_reward_timeout,
+            floor=self.cfg.invalid_logr,
+            max_atoms=self.cfg.guard_max_atoms or None)
 
         self.policy_ema = None
         if self.cfg.use_ema_policy:
@@ -757,6 +781,7 @@ class LitRTBFineTune(L.LightningModule):
             "train/log_ratio_mean": ratio.mean().detach(),
             "train/valid_frac": chem_valid,
             "train/reward_valid_frac": reward_valid,
+            "train/reward_timeouts": float(self.reward_fn.stats["timeouts"]),
             "diag/zprefix_drift": torch.tensor(float(info["zprefix_drift"])),
             "diag/n_recorded": float(self.recorder.count) if self.recorder else 0.0,
         }, prog_bar=True)
@@ -887,6 +912,7 @@ def parse_args():
 
 if __name__ == "__main__":
     cfg = parse_args()
+    install_faulthandler(log_dir=f"logs/quetzal-ft/{cfg.name}")
     # before the module is built, so adapter initialisation is covered too
     L.seed_everything(cfg.seed, workers=True)
 
@@ -938,6 +964,15 @@ if __name__ == "__main__":
     wandb_logger = WandbLogger(save_dir="logs", project="quetzal-ft", entity=entity,
                                name=cfg.name, config=asdict(cfg), offline=False)
 
+    def _callbacks(cfg, ckpt_cb, log_dir):
+        cbs = [ckpt_cb]
+        if cfg.guard_stall_minutes > 0:
+            # flush_fn is picked up from pl_module.recorder in on_train_start,
+            # so the molecule log is written before a stalled process exits
+            cbs.append(stall_guard_callback(
+                timeout_s=cfg.guard_stall_minutes * 60.0, log_dir=log_dir))
+        return cbs
+
     ckpt_cb = ModelCheckpoint(
         dirpath=ckpt_dir,
         train_time_interval=datetime.timedelta(minutes=cfg.save_interval_minutes),
@@ -950,7 +985,7 @@ if __name__ == "__main__":
         logger=wandb_logger, log_every_n_steps=10,
         gradient_clip_val=cfg.grad_clip if cfg.grad_clip > 0 else None,
         precision="bf16-mixed", enable_progress_bar=cfg.debug,
-        callbacks=[ckpt_cb], num_sanity_val_steps=0)
+        callbacks=_callbacks(cfg, ckpt_cb, ckpt_dir), num_sanity_val_steps=0)
 
     dm = StepDataModule(cfg.steps_per_epoch, cfg.num_workers)
     trainer.fit(lit, datamodule=dm, ckpt_path=resume_path)

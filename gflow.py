@@ -50,6 +50,8 @@ from chem import Molecule, GEN, STOP, PAD, QM9_MASK
 from metrics import compute_valid_unique
 from reward_fn import build_reward, mol_to_rdkit
 from tempgain_guide import TempGainGuide
+from hang_guard import (install_faulthandler, guarded_reward,
+                        stall_guard_callback)
 from replay_buffer import TrajectoryReplayBuffer, collate_replayed
 from rdkit import Chem
 
@@ -275,6 +277,22 @@ class GFNConfig:
     vis_every_n_epochs: int = 5
     save_interval_minutes: int = 10
 
+    # ---- hang guard (hang_guard.py) ----------------------------------------
+    # Reward evaluation runs on CPU and can block indefinitely: RDKit bond
+    # perception from 3D coordinates searches over bond orders and charges and
+    # can blow up on a dense or oversized structure, and an xtb subprocess has
+    # no timeout of its own. A blocked reward call freezes the run while the
+    # process stays alive holding its GPU.
+    guard_reward_timeout: float = 20.0   # per-molecule ceiling, 0 disables
+    guard_stall_minutes: float = 30.0    # watchdog on batch progress, 0 disables
+    # Floor every molecule above this many atoms WITHOUT scoring it. Off by
+    # default and it should stay off: flooring by size trains the policy away
+    # from that size, which changes the objective rather than guarding it.
+    # Only reach for this if a stack dump has shown large molecules to be the
+    # cause. 0 disables.
+    guard_max_atoms: int = 0
+
+
 
 # ============================ Frozen Quetzal ===============================
 
@@ -480,6 +498,15 @@ class LitGFlowNet(L.LightningModule):
             self.flow_head = None
 
         self.reward_fn = build_reward(self.cfg)
+        # No single molecule may stall the run. A timed-out molecule is scored
+        # at the same invalid floor as one that fails bond perception, and the
+        # count is logged as train/reward_timeouts so a guard that is firing
+        # often is visible rather than silently depressing the mean.
+        self.reward_fn = guarded_reward(
+            self.reward_fn,
+            seconds=self.cfg.guard_reward_timeout,
+            floor=self.cfg.invalid_logr,
+            max_atoms=self.cfg.guard_max_atoms or None)
 
         # ---- replay buffer (optional) ----
         self.replay = None
@@ -981,6 +1008,7 @@ class LitGFlowNet(L.LightningModule):
                 "train/log_reward_max": log_reward.max(),
                 "train/valid_frac": chem_valid_frac,
                 "train/reward_valid_frac": reward_valid_frac,
+            "train/reward_timeouts": float(self.reward_fn.stats["timeouts"]),
                 **db_stats,
             }, prog_bar=True)
             return loss
@@ -1255,6 +1283,7 @@ def parse_args():
 
 if __name__ == "__main__":
     cfg = parse_args()
+    install_faulthandler(log_dir=f"logs/quetzal-gfn/{cfg.name}")
     # before the module is built: the guide's hidden layers are randomly
     # initialised, so seeding after construction would leave them uncontrolled
     L.seed_everything(cfg.seed, workers=True)
@@ -1284,6 +1313,13 @@ if __name__ == "__main__":
 
     print(f"Resuming from: {resume_path}")
 
+    def _callbacks(cfg, ckpt_cb, log_dir):
+        cbs = [ckpt_cb]
+        if cfg.guard_stall_minutes > 0:
+            cbs.append(stall_guard_callback(
+                timeout_s=cfg.guard_stall_minutes * 60.0, log_dir=log_dir))
+        return cbs
+
     ckpt_cb = ModelCheckpoint(
         dirpath=checkpoint_dir,
         train_time_interval=datetime.timedelta(minutes=cfg.save_interval_minutes),
@@ -1296,7 +1332,7 @@ if __name__ == "__main__":
         logger=wandb_logger, log_every_n_steps=10,
         gradient_clip_val=cfg.grad_clip if cfg.grad_clip > 0 else None,
         precision="bf16-mixed", enable_progress_bar=cfg.debug,
-        callbacks=[ckpt_cb], num_sanity_val_steps=0)
+        callbacks=_callbacks(cfg, ckpt_cb, checkpoint_dir), num_sanity_val_steps=0)
 
     dm = StepDataModule(cfg.steps_per_epoch, cfg.num_workers)
     trainer.fit(lit, datamodule=dm, ckpt_path=resume_path)

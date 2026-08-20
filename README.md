@@ -29,6 +29,7 @@ configuration tested.
 - [Downloads](#downloads)
 - [Running the experiments](#running-the-experiments)
 - [Configuration reference](#configuration-reference)
+- [Figures](#figures)
 - [Pretraining the prior](#pretraining-the-prior)
 - [Citation](#citation)
 
@@ -53,14 +54,17 @@ let `scripts/common.sh` set `PYTHONPATH` for you.
 │   ├── 07_ablations.sh       mechanism ablations
 │   ├── 08_analysis.sh        harvest, best-of-N baselines, reward histograms
 │   ├── run_all.sh            all eight stages in order
+│   ├── supervise_run.sh      restart a job that stalls or crashes
 │   └── prior/                SLURM helpers for pretraining Quetzal itself
 ├── ablations/                the mechanism probes stage 7 drives
+├── figures/                  one script per paper figure, + make_all.sh
 ├── notebooks/                play.ipynb, colab.ipynb
 ├── reference/                GEOM-Drugs SMILES corpus, frozen-prior samples
 ├── results/                  generated artifacts (see Downloads)
 │
 ├── Steering                  gflow.py, gflow_multi.py, rtb_finetune.py
 │                             hidden_guide.py, tempgain_guide.py, replay_buffer.py
+├── Robustness                hang_guard.py, scripts/supervise_run.sh
 ├── Rewards                   reward_fn.py
 ├── Scoring                   final_dump.py, final_dump_composed.py,
 │                             aggregate_dumps.py, harvest_eval.py,
@@ -254,6 +258,66 @@ per-objective and per-component reward histograms. No GPU training.
 Each concurrent training holds its own copy of the frozen prior in VRAM, so
 raising `MAX_PARALLEL` past what the GPU fits will OOM rather than run faster.
 
+### Hang guard
+
+Training can stop progressing while the process stays alive and holds its GPU:
+no exception, no OOM, no collapse. It is nearly always a CPU-side reward call
+that never returns — RDKit bond perception from 3D coordinates searches over
+bond orders and charges and can blow up on a dense structure, and an xtb
+subprocess has no timeout of its own.
+
+`hang_guard.py` is wired into `gflow.py` and `rtb_finetune.py` and is **on by
+default**, in three layers:
+
+| Layer | What it does | Flag |
+|---|---|---|
+| `install_faulthandler` | `kill -USR1 <pid>` prints every thread's stack without killing the run | always on |
+| `guarded_reward` | hard per-molecule ceiling on reward evaluation; an overrun is scored at the invalid floor | `--guard_reward_timeout` (default 20s, 0 disables) |
+| `StallGuard` | no batch in N minutes → dump stacks, flush the molecule log, exit 17 | `--guard_stall_minutes` (default 30, 0 disables) |
+
+Stack dumps go to `logs/quetzal-{gfn,ft}/<name>/`. To diagnose a live hang
+without killing it:
+
+```bash
+kill -USR1 $(pgrep -f "gflow.py --name <run>")
+```
+
+`scripts/supervise_run.sh` restarts a job that stalls or crashes:
+
+```bash
+bash scripts/supervise_run.sh rtb-proj-osim-b10 --   python rtb_finetune.py --name rtb-proj-osim-b10 --finetune_scope proj     --reward guacamol --reward_smiles hard_osimertinib --reward_beta 10
+```
+
+It stops on exit 0, retries on 17 (stall) and on crashes, and gives up after
+three failures inside `MIN_RUNTIME` — a run that dies in seconds is a config
+error, not a transient stall, and retrying it twenty times just fills the disk
+with identical tracebacks. It also wraps a whole stage:
+`bash scripts/supervise_run.sh guides -- bash scripts/01_train_guides.sh`.
+
+Restarting is safe because both trainers resume from the newest checkpoint
+automatically, and `rtb_finetune` rolls the molecule log back to the count
+stored in the checkpoint (`recorder.rollback_to`). Lightning replays the batches
+between the last checkpoint and the crash; without that rollback those molecules
+would be logged twice under different indices and a budget slice on `i` would
+spend oracle calls on duplicates. `gflow.py` records no molecule stream, so
+restart is unconditionally safe there.
+
+**What the guard costs.** A timed-out molecule is floored at `invalid_logr`,
+joining the same bucket as one that fails bond perception — which is what it is.
+But a guard firing often reshapes the reward distribution, so the count is
+logged as `train/reward_timeouts` and printed periodically. **If that is not
+approximately zero, the run is affected and the timeout needs raising, not
+ignoring.**
+
+`--guard_max_atoms` floors molecules above a size without scoring them. It is
+off by default and should stay off: GEOM-sized molecules run to 80–100 heavy
+atoms against a `max_len` of 192, so a ceiling near the sampled range trains the
+policy away from large molecules, changing the objective rather than guarding
+it. Reach for it only if a stack dump has shown large molecules to be the cause.
+
+`final_dump.py` is **not** guarded — a hang during stage 4 will still need
+`kill -USR1` and a manual restart.
+
 ### Seeds
 
 There are **two independent seed axes**, and they measure different things.
@@ -346,6 +410,28 @@ ratio incurs a bias; `diag/zprefix_drift` logs its size so the violation is
 measured rather than assumed.
 
 ---
+
+## Figures
+
+Every figure in the paper has a script in [`figures/`](figures/). Each reads a
+**committed artifact** under `results/` rather than re-running a model, so
+figures regenerate on a laptop in seconds with no GPU and no checkpoints.
+
+```bash
+bash figures/make_all.sh                  # -> figures/out/
+OUT_DIR=paper/figs FORMAT=png bash figures/make_all.sh
+python figures/make_fig01_landscape.py --bench osim --out /tmp/f1.pdf
+```
+
+A figure whose input has not been produced yet prints the command that produces
+it and is counted as skipped rather than failed, so a partial run shows exactly
+what is outstanding. As committed, 8 of 13 render immediately; Figures 5, 7, 8
+and 9 need stage 7, which has not been run in this layout.
+
+[figures/README.md](figures/README.md) has the figure-to-artifact map and
+records three known gaps between what the scripts produce and the paper as
+written — most importantly that Figure 2's 0.89 first-atom flip rate does not
+reproduce from the committed flip reports, where the maximum is 0.452.
 
 ## Pretraining the prior
 
