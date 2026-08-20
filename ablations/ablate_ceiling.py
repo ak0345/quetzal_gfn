@@ -1,24 +1,26 @@
 """
-ablate_ceiling.py -- two diagnostics that share one prior rollout:
+Two diagnostics that share one rollout of the frozen prior.
 
-  #2 PRIOR-SATURATION BINNING (the flip ceiling).
-     At each decision the prior has a top-1 logit gap (logit_1 - logit_2). A
-     residual of norm ~R can only flip the decision where that gap is small. We
-     bin states by prior top-1 gap and, per guide, compute the sampled-flip rate
-     WITHIN each bin. This quantifies the ceiling exactly:
-       "the guide can only act at X% of decisions because the prior is decisive
-        (gap > G) everywhere else."
-     Output: flip-rate vs prior-gap curve per guide, and the fraction of decisions
-     that even fall in a flippable gap range.
+  MARGIN BINNING.
+     At each decision the prior has a top-1 margin, logit_1 - logit_2. A residual
+     of a given norm can only change the decision where that margin is small.
+     This bins states by the prior's margin and computes the sampled-flip rate
+     within each bin, per guide. The flip rate falls to zero above a margin of
+     roughly 4, while the majority of decisions lie above 8.
 
-  #5 COMPONENT VARIANCE ON QUETZAL (dead-axis vs undertrained).
-     Score Quetzal BASE samples on each of the K osim components. A component with
-     near-zero variance over reachable molecules is a DEAD AXIS -- no guide can
-     steer it, so a KL~0 guide there is expected, not a training failure. A
-     component WITH variance but a KL~0 guide is genuinely UNDER-TRAINED. This
-     fork decides retrain-vs-drop for each component.
+     Output: a flip-rate against margin curve per guide, plus the fraction of
+     decisions falling in each bin.
 
-Usage (mirror compose.py flags; give the per-component eval rewards):
+  COMPONENT VARIANCE.
+     Scores frozen-prior samples on each leaf component of the MPO objective. A
+     component with near-zero variance over reachable molecules is a dead axis:
+     no guide can steer it, so a flat curve there is expected rather than a
+     training failure. A component with real variance but a flat guide is
+     genuinely under-trained. This separates the two, and is why the benchmark
+     runs train against the assembled objective rather than its components.
+
+Usage (the guide flags mirror gflow_multi's; give the per-component eval
+rewards):
     python ablate_ceiling.py \
         --guide_ckpts "...c0/last.ckpt,...c1,...c2,...c3" \
         --guide_labels "c0,c1,c2,c3" \

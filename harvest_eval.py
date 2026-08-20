@@ -337,7 +337,7 @@ def main():
                     ref_set.add(Chem.MolToSmiles(m))
         print(f"[ref] {len(ref_set)} reference molecules from {args.ref_smiles}")
 
-        # Score the reference set itself: this is your own "best of dataset"
+        # Score the reference set itself: the matched-budget "best of dataset"
         # virtual-screening baseline, the analogue of the 0.839 row in the
         # GuacaMol table. Beating it is what separates optimisation from
         # retrieval, so it belongs on every plot.

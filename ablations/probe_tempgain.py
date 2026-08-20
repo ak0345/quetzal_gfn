@@ -1,31 +1,39 @@
 """
-probe_tempgain.py -- Category 3: what did the temp/gain fix LEARN, and what did it COST?
+What the temperature and gain heads learned, and what they cost.
 
-The temp/gain guide attacks the saturated-prior ceiling via
-    guided = prior/T(h) + g(h)*residual(h)
-This probe reads T(h) and g(h) directly off the loaded guides (no training-time
-logging needed) and checks the three failure modes the fix can introduce:
+The temp/gain guide computes
+
+    guided = prior/T(h) + g(h) * residual(h)
+
+This probe reads T(h) and g(h) directly off trained checkpoints -- no
+training-time logging required -- and reports three things:
 
   A. WHAT T AND g LEARNED.
-     Histogram T(h) and g(h) over sampled states. The fix is only meaningful if
-     T > 1 SELECTIVELY -- high where reward is contestable, ~1 where softening
-     would break molecules. T flat at 1 => fix inert (temperature never engaged).
-     T huge everywhere => over-softening (validity risk). Cross-tabulate T against
-     the prior top-1 gap: ideally T rises in the HIGH-gap bins (that's the ceiling
-     being opened exactly where it was stuck).
+     T(h) and g(h) over sampled states, cross-tabulated against the prior's
+     top-1 margin. The mechanism is only meaningful if T > 1 selectively: high
+     where the decision is contestable, near 1 where softening would break
+     validity. T flat at 1 means the temperature never engaged; T large
+     everywhere means over-softening.
 
-  B. VALIDITY / UNIQUENESS COST.
-     Softening the prior can produce invalid molecules (cf. the residual-scale
-     validity cliff). Compare validity/uniqueness of the temp/gain guide vs the
-     plain-residual baseline. If validity craters, the "fix" just trades validity
-     for flips -- not a fix.
+     This is the probe that established the defect reported in the paper. The
+     learned T sits between 0.73 and 0.80 everywhere and is flat in the margin,
+     and since the forward pass applied clamp(T, min=1) the effective
+     temperature was 1 at every state.
 
-  C. STEERING CORRECTNESS (does it flip toward HIGHER reward?).
-     More flips (Category 1) only help if they move mass toward reward. Compare the
-     guided reward distribution to base, and report the fraction of the extra flips
-     that landed on higher-reward continuations (paired against the prior choice).
+  B. VALIDITY AND UNIQUENESS COST.
+     Softening the prior can produce invalid molecules, as the residual-scale
+     sweep shows directly. Compares validity and uniqueness against the
+     plain-residual baseline: flips bought by collapsing validity are not a
+     gain.
 
-Usage (mirror compose.py flags; give the per-component eval rewards):
+  C. STEERING DIRECTION.
+     More flips only help if they move mass toward reward. Compares the guided
+     reward distribution to the prior's and reports the fraction of the extra
+     flips that landed on higher-reward continuations, paired against the
+     prior's own choice.
+
+Usage (the guide flags mirror gflow_multi's; give the per-component eval
+rewards):
     python probe_tempgain.py \
         --guide_ckpts "...comp0--tempgain.../last.ckpt,...comp2...,...comp3..." \
         --guide_labels "c0,c2,c3" \

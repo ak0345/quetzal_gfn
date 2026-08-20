@@ -1,11 +1,23 @@
 """
-GFlowNet (Relative Trajectory Balance) fine-tuning on top of a *frozen* Quetzal.
+Guide training on top of a frozen Quetzal prior.
 
-Sample from  p*(x) ~ p_prior(x) * R(x)^beta  by training a small guide MLP that
-adds a residual to Quetzal's atom-type logits. Coordinate diffusion is frozen,
-so its log-density cancels in the RTB ratio and the objective only involves the
-discrete atom-type decisions.
-    
+Samples from the tilted distribution p*(x) ~ p_prior(x) * R(x)^beta by training
+a small guide network that modifies Quetzal's atom-type logits. The coordinate
+diffusion stays frozen throughout, so for a given atom sequence its conditioner
+is identical under the guided policy and the prior, its log-density cancels
+exactly in the trajectory ratio, and the objective involves only the discrete
+atom-type decisions.
+
+Three guide architectures are selectable, all zero-initialised so training
+begins at the frozen prior:
+
+    residual   guided = proj_logits(h) + g(h)              (--no_use_hidden_guide)
+    temp/gain  guided = proj_logits(h)/T(h) + gamma(h)g(h) (--use_prior_temp
+                                                            --use_residual_gain)
+    hidden     guided = proj_logits(h + delta(h))          (the default)
+
+and four objectives (--objective): detailed balance, relative trajectory
+balance, and the two KL directions.
 """
 
 import os
@@ -44,7 +56,7 @@ from rdkit import Chem
 entity = os.getenv("WANDB_ENTITY")
 
 
-# ====================== Guided generation (monkeypatch) =====================
+# ======================= Guided generation =================================
 
 def _generate_guided(self, bsz, guide, sample_temp=1.0, rand_eps=0.0,
                      max_len=None, device="cpu", pbar=False, mask_atoms=None,
@@ -160,13 +172,14 @@ class GFNConfig:
     num_nodes: int = 1
     debug: bool = False
     resume_path: str = None
-    # Warm-start: load a PRE-patch (bare LogitGuide) checkpoint's residual weights
-    # into the fresh TempGainGuide's BASE guide, leaving temp/gain at identity.
-    # This fine-tunes temperature+gain on top of an already-trained residual
-    # instead of retraining the residual from scratch. Empty -> no warm start.
+    # Load a bare LogitGuide checkpoint's residual weights into a fresh
+    # TempGainGuide's base guide, leaving the temperature and gain heads at
+    # identity, so training fine-tunes those on top of an already-trained
+    # residual rather than relearning it. Empty means no warm start.
     warm_start_guide: str = ""
-    # which weights to pull from the warm-start ckpt: "ema" (guide_ema.module.*)
-    # or "policy" (guide.*). EMA is what generated the eval SMILES.
+    # Which weights to pull from the warm-start checkpoint: "ema"
+    # (guide_ema.module.*) or "policy" (guide.*). The EMA weights are the ones
+    # that generated the evaluation SMILES.
     warm_start_source: str = "ema"
 
     dataset: str = "geom"
@@ -197,16 +210,17 @@ class GFNConfig:
     vocab_size: int = 128
     guide_hidden: int = 512
     guide_layers: int = 2
-    # saturated-prior ceiling fix: learned per-state temperature (softens the
-    # frozen prior) + gain (amplifies residual where the guide is confident).
-    # Zero-init => starts at identity (prior + residual), no cold-start regression.
+    # Learned per-state temperature on the prior, which softens it, plus a gain
+    # that amplifies the residual where the guide is confident. Both are
+    # zero-initialised, so this starts at the plain prior-plus-residual.
     use_prior_temp: bool = False
     use_residual_gain: bool = False
     tempgain_hidden: int = 128
-    # Fix B: inject the guide on the HIDDEN STATE before proj_logits, instead of
-    # adding a residual to the saturated output logits. A small hidden delta is
-    # amplified by proj_logits into a large logit change -> beats the ceiling.
-    # Mutually exclusive with the tempgain wrapper (uses its own architecture).
+    # Inject on the hidden state before proj_logits rather than adding to the
+    # output logits. proj_logits amplifies a small hidden delta into a large
+    # logit change, because it moves along the directions the projection uses.
+    # Mutually exclusive with the temp/gain wrapper, which has its own
+    # architecture.
     use_hidden_guide: bool = True
     hidden_guide_out_residual: bool = True
 
@@ -225,10 +239,10 @@ class GFNConfig:
 
     # --- Replay buffer (arXiv:2307.07674) -----------------------------------
     # Mixes a fixed fraction of replayed high-reward trajectories into each
-    # DB/RTB batch. Replayed trajectories are teacher-forced through the guide
-    # so their logpf is grad-attached under the CURRENT policy (stored log-probs
-    # would be stale). Improves mode-discovery speed/count; does NOT by itself
-    # break the saturated-prior ceiling.
+    # DB or RTB batch. Replayed trajectories are teacher-forced through the
+    # guide so their logpf is gradient-attached under the current policy;
+    # log-probs stored at insertion time would be stale. This improves mode
+    # discovery without changing the reported bound.
     use_replay: bool = False
     replay_capacity: int = 10000
     replay_strategy: str = "reward"       # "reward" (prioritized) | "uniform"
@@ -445,7 +459,7 @@ class LitGFlowNet(L.LightningModule):
                                       _pl + _base_guide(_h), atol=1e-4), \
                     'TempGainGuide not identity at init -- check zero-init'
 
-        # ---- WARM START: load a pre-patch LogitGuide residual into the base ----
+        # ---- warm start: load a trained LogitGuide residual into the base ----
         if self.cfg.warm_start_guide and _base_guide is not None:
             self._load_warm_start(_base_guide, self.cfg.warm_start_guide,
                                   self.cfg.warm_start_source)
@@ -487,13 +501,13 @@ class LitGFlowNet(L.LightningModule):
             p.requires_grad = False
 
     def _load_warm_start(self, base_guide, ckpt_path, source):
-        """Load a PRE-patch LogitGuide's residual weights from `ckpt_path` into
-        `base_guide` (the TempGainGuide's base). Leaves temp/gain at identity, so
-        training fine-tunes those on top of the trained residual.
+        """Load a LogitGuide's residual weights from `ckpt_path` into
+        `base_guide`, the TempGainGuide's base. The temperature and gain heads
+        are left at identity, so training fine-tunes those on top.
 
-        The old checkpoint stores the guide under 'guide.*' (policy) or
-        'guide_ema.module.*' (EMA). We strip that prefix and load into base_guide,
-        which is a plain LogitGuide (its params are 'net.*').
+        A guide checkpoint stores its weights under 'guide.*' (policy) or
+        'guide_ema.module.*' (EMA). The prefix is stripped and the rest loaded
+        into base_guide, a plain LogitGuide whose parameters are 'net.*'.
         """
         ck = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         sd = ck.get("state_dict", ck)
@@ -504,17 +518,17 @@ class LitGFlowNet(L.LightningModule):
         else:
             raise ValueError(f"warm_start_source must be 'ema' or 'policy', got {source!r}")
 
-        # pull the base-guide weights. In a PRE-patch ckpt the guide IS the
-        # LogitGuide, so keys look like 'guide.net.0.weight'. In a POST-patch ckpt
-        # the base lives at 'guide.guide.net.*'; handle both by also trying the
-        # nested prefix if the flat one yields nothing usable.
+        # Pull the base-guide weights. Where the checkpoint's guide IS a
+        # LogitGuide the keys read 'guide.net.0.weight'; where it is a
+        # TempGainGuide the base sits one level deeper at 'guide.guide.net.*'.
+        # Try the flat prefix first and fall back to the nested one.
         def collect(pfx):
             return {k[len(pfx):]: v for k, v in sd.items()
                     if k.startswith(pfx) and "n_averaged" not in k
                     and not k[len(pfx):].startswith(("temp.", "gain.", "guide."))}
 
         sub = collect(prefix)
-        # if this looks like a post-patch ckpt, the residual is one level deeper
+        # a TempGainGuide checkpoint keeps the residual one level deeper
         nested = prefix + "guide."
         if not sub or all(not kk.startswith("net.") for kk in sub):
             deeper = {k[len(nested):]: v for k, v in sd.items()
@@ -627,7 +641,7 @@ class LitGFlowNet(L.LightningModule):
                 h = seq[:, -1, :]                       # [B, d] state hidden
                 prior_logits = prior.proj_logits(h)
 
-            # ---- guide policy: WITH grad (this is the fix) ----
+            # ---- guide policy: gradient attached ----
             if guide is None:
                 guided = prior_logits
             elif hasattr(guide, 'guided_logits'):
@@ -965,12 +979,12 @@ class LitGFlowNet(L.LightningModule):
             }, prog_bar=True)
             return loss
 
-        # ---------------- KL baselines (same logit guide, different loss) --------
-        # Isolates the LOSS from the guidance MECHANISM: identical prior+guide(h)
-        # residual, but trained by a direct KL to the tilted target
-        # p*(x) ∝ p_prior(x) * R(x)^beta, at the TRAJECTORY level (comparable to
-        # DB's terminal target). If these ALSO can't steer (only flip the low-gap
-        # decisions), the saturated-prior ceiling is architectural, not a DB quirk.
+        # ---------------- KL baselines (same guide, different loss) --------------
+        # Separates the loss from the guidance mechanism: an identical
+        # prior + guide(h) residual, trained instead by a direct KL to the
+        # tilted target p*(x) ~ p_prior(x) * R(x)^beta at the trajectory level,
+        # which is comparable to DB's terminal target. If these reach the same
+        # flip rates, the bound does not depend on the choice of objective.
         if self.cfg.objective in ("revkl", "fwdkl"):
             out = self.rollout(self.cfg.bsz, guide="policy")
             lp_guide = out["logp_policy"]           # log q(x)   (attached, grad)
@@ -1015,7 +1029,7 @@ class LitGFlowNet(L.LightningModule):
             }, prog_bar=True)
             return loss
 
-        # ---------------- RTB / VarGrad branch (unchanged) ----------------
+        # ---------------- RTB / VarGrad branch ----------------
         out = self.rollout(self.cfg.bsz, guide="policy")
         ratio = out["logp_policy"] - out["logp_prior"]
         if self.cfg.ratio_clip > 0:

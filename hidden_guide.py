@@ -1,44 +1,43 @@
 """
-hidden_guide.py -- Fix B: inject the guide BEFORE the final projection.
+Guide architecture that injects on the hidden state, before the frozen
+projection.
 
-THE PROBLEM (the ceiling): the plain guide adds a residual to proj_logits(h),
-whose output logits are enormous (norm ~6841) and decisive (top-1 gap > 8 on 72%
-of decisions). A residual of realistic norm (~5) is a rounding error at that scale
-and cannot flip the argmax on high-gap decisions.
+The residual guide adds to proj_logits(h). Those logits are large (norm ~6841)
+and decisive: the top-1 margin exceeds 8 on ~72% of decisions, so a residual of
+realistic norm cannot change the argmax there.
 
-THE IDEA: perturb the HIDDEN STATE h instead, then let the frozen proj_logits map
-it to logits. proj_logits is a learned linear map; a small, well-aligned change to
-h is AMPLIFIED by proj_logits into a large, correctly-shaped change in logits --
-because it moves along the directions proj_logits actually uses. We are no longer
-fighting the output magnitude; we are steering the input to the saturating layer.
+This guide perturbs h instead and lets the frozen proj_logits map the result to
+logits. Because proj_logits amplifies displacements along the directions it
+uses, a small well-aligned change to h produces a large change in logit space --
+empirically a delta of norm 0.1 moves the logits by ~46, against ~1.3 for an
+output residual of the same norm.
 
-    plain :  guided_logits = proj_logits(h) + guide(h)
-    hidden:  guided_logits = proj_logits(h + delta(h))          [fix B]
+    residual :  guided_logits = proj_logits(h) + guide(h)
+    hidden   :  guided_logits = proj_logits(h + delta(h))
 
-delta(h) is a learned residual on the hidden state (same dim as h). Zero-init so
-delta=0 at start -> guided_logits == proj_logits(h) (the frozen prior) -> identity,
-no cold-start regression.
+delta is zero-initialised, so the guided logits equal the prior's exactly at
+initialisation and training begins at the frozen model.
 
-INTEGRATION: this guide needs the prior's proj_logits to run its forward, so unlike
-LogitGuide (which only sees h), it must be given a reference to proj_logits.
+Unlike LogitGuide, which only sees h, this guide needs a reference to the
+prior's proj_logits to run its forward pass.
 """
 import torch
 import torch.nn as nn
 
 
 class HiddenGuide(nn.Module):
-    """Guide that perturbs the hidden state before the frozen projection.
+    """Perturbs the hidden state before the frozen projection.
 
-        guided_logits(h) = proj_logits( h + delta(h) )  [ + optional out_residual(h) ]
+        guided_logits(h) = proj_logits(h + delta(h))  [+ optional out_residual(h)]
 
-    delta is zero-init -> starts at the exact frozen-prior logits.
+    delta is zero-initialised, so this starts at the frozen prior's logits.
     """
     def __init__(self, d_model, proj_logits, hidden=512, layers=2,
                  vocab_size=128, also_output_residual=False):
         super().__init__()
         self.d_model = d_model
-        # keep a reference to the FROZEN projection (not registered as a parameter
-        # to train; we rely on it already being frozen in the prior).
+        # A reference to the projection, which the prior has already frozen; it
+        # is deliberately not registered as a trainable parameter here.
         self._proj = proj_logits
         self.vocab_size = vocab_size
 
@@ -47,13 +46,13 @@ class HiddenGuide(nn.Module):
         for _ in range(max(layers - 1, 0)):
             blocks += [nn.Linear(din, hidden), nn.SiLU()]
             din = hidden
-        blocks += [nn.Linear(din, d_model)]   # output is a HIDDEN-STATE delta
+        blocks += [nn.Linear(din, d_model)]   # the output is a hidden-state delta
         self.delta = nn.Sequential(*blocks)
-        # zero-init the last layer so delta(h)=0 at start -> identity
+        # zero-init the last layer so delta(h) = 0 at initialisation
         nn.init.zeros_(self.delta[-1].weight)
         nn.init.zeros_(self.delta[-1].bias)
 
-        # optional small output-logit residual (belt & braces); zero-init too
+        # optional additive residual on the output logits, also zero-init
         self.out_residual = None
         if also_output_residual:
             self.out_residual = nn.Sequential(
@@ -63,7 +62,7 @@ class HiddenGuide(nn.Module):
             nn.init.zeros_(self.out_residual[-1].bias)
 
     def guided_logits(self, h):
-        """Takes the hidden state h, returns GUIDED LOGITS (proj already applied)."""
+        """Hidden state in, guided logits out (the projection is already applied)."""
         d = self.delta(h)
         logits = self._proj(h + d)
         if self.out_residual is not None:
@@ -71,9 +70,9 @@ class HiddenGuide(nn.Module):
         return logits
 
     def forward(self, h):
-        """For compatibility with call sites that expect a residual: return
-        (guided_logits - prior_logits) so `prior + guide(h)` still yields the
-        guided logits. Prefer guided_logits(h) directly."""
+        """Return guided_logits - prior_logits, so call sites expecting an
+        additive residual still compose to the guided logits via
+        `prior + guide(h)`. Prefer guided_logits(h) where possible."""
         with torch.no_grad():
             prior_logits = self._proj(h)
         return self.guided_logits(h) - prior_logits

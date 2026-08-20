@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Stage 1 -- the guide sweep.
+#
+# Trains a small guide on top of the frozen Quetzal prior across four axes:
+#
+#   guide     : hidden | tempgain | base       (where the residual is injected)
+#   objective : db | rtb | revkl | fwdkl       (what it is trained to minimise)
+#   replay    : on | off                       (db/rtb only; the KL branches
+#                                               have no trajectory buffer)
+#   beta      : reward exponent
+#   reward    : osim | fexo | peri             (GuacaMol MPO benchmarks)
+#               nitrogen                       (dense positive control)
+#
+# Training only -- no eval, no dump. Scoring happens in stage 4, so a sweep can
+# run to completion on one GPU and be measured afterwards. Each run is skipped
+# if its checkpoint directory already holds a *.ckpt, so the sweep is resumable.
+#
+# The full cross product (minus the invalid replay+KL combinations) is 288 runs.
+# SUBSET=1 (the default) runs the reduced grid the paper reports.
+#
+# Usage:
+#   bash scripts/01_train_guides.sh
+#   SUBSET=0 bash scripts/01_train_guides.sh          # the entire matrix
+#   REWARDS="nitrogen" bash scripts/01_train_guides.sh
+#   MAX_PARALLEL=3 bash scripts/01_train_guides.sh    # 3 at a time on one GPU
+#   DRY=1 bash scripts/01_train_guides.sh             # print commands only
+# =============================================================================
+set -uo pipefail    # no -e: one failed run must not kill the sweep
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+require_prior
+
+SUBSET="${SUBSET:-1}"
+MAX_EPOCHS="${MAX_EPOCHS:-5}"
+STEPS="${STEPS:-100}"
+LOGDIR="${LOGDIR:-${LOG_ROOT}/guides}"
+mkdir -p "$LOGDIR"
+
+# ------------------------------ axes ----------------------------------------
+# Each axis is a space-separated string so it can be overridden from the
+# environment, then split into an array.
+if [[ "$SUBSET" == "1" ]]; then
+  : "${GUIDES:=hidden tempgain base}"
+  : "${OBJECTIVES:=db rtb}"
+  : "${REPLAYS:=on off}"
+  : "${BETAS:=1 10}"
+  : "${REWARDS:=nitrogen osim peri fexo}"
+else
+  : "${GUIDES:=hidden tempgain base}"
+  : "${OBJECTIVES:=db rtb revkl fwdkl}"
+  : "${REPLAYS:=on off}"
+  : "${BETAS:=1 2 4 10}"
+  : "${REWARDS:=osim fexo peri nitrogen}"
+fi
+read -r -a GUIDES     <<< "$GUIDES"
+read -r -a OBJECTIVES <<< "$OBJECTIVES"
+read -r -a REPLAYS    <<< "$REPLAYS"
+read -r -a BETAS      <<< "$BETAS"
+read -r -a REWARDS    <<< "$REWARDS"
+
+# ------------------------ reward -> flag translation ------------------------
+# The assembled benchmark goes through the guacamol passthrough, which reads the
+# standard_benchmarks function name from --reward_smiles. (--reward
+# guacamol_component with --reward_component i would instead train against one
+# leaf scorer of the MPO objective; that is stage 2.)
+reward_flags () {
+  case "$1" in
+    osim)     echo "--reward guacamol --reward_smiles hard_osimertinib" ;;
+    fexo)     echo "--reward guacamol --reward_smiles hard_fexofenadine" ;;
+    peri)     echo "--reward guacamol --reward_smiles perindopril_rings" ;;
+    nitrogen) echo "--reward nitrogen_count" ;;
+    *) echo "UNKNOWN_REWARD_$1" ;;
+  esac
+}
+
+# ------------------------ guide -> flag translation -------------------------
+# argparse only generates the flag that flips a dataclass default, so a value
+# already at its default is omitted rather than negated:
+#   use_hidden_guide  defaults True  -> only --no_use_hidden_guide exists
+#   use_prior_temp    defaults False -> only --use_prior_temp exists
+#   use_residual_gain defaults False -> only --use_residual_gain exists
+guide_flags () {
+  case "$1" in
+    hidden)   echo "" ;;
+    tempgain) echo "--no_use_hidden_guide --use_prior_temp --use_residual_gain" ;;
+    base)     echo "--no_use_hidden_guide" ;;
+    *) echo "UNKNOWN_GUIDE_$1" ;;
+  esac
+}
+
+replay_flags () {
+  case "$1" in
+    on)  echo "--use_replay --replay_fraction 0.25 --replay_strategy reward" ;;
+    off) echo "" ;;
+    *) echo "UNKNOWN_REPLAY_$1" ;;
+  esac
+}
+
+# ------------------------------ driver --------------------------------------
+COUNT=0; RAN=0; SKIPPED=0
+START_TS=$(date +%s)
+
+for reward in "${REWARDS[@]}"; do
+  for guide in "${GUIDES[@]}"; do
+    for obj in "${OBJECTIVES[@]}"; do
+      if [[ " ${SKIP_OBJECTIVES:-} " == *" ${obj} "* ]]; then continue; fi
+      for replay in "${REPLAYS[@]}"; do
+        # replay is a trajectory buffer, meaningless for the KL objectives
+        if [[ "$replay" == "on" && "$obj" != "db" && "$obj" != "rtb" ]]; then
+          continue
+        fi
+        for beta in "${BETAS[@]}"; do
+          COUNT=$((COUNT+1))
+          NAME="sweep-${reward}-${guide}-${obj}-replay_${replay}-b${beta}"
+
+          if compgen -G "${CKPT_ROOT}/${NAME}/checkpoints/*.ckpt" > /dev/null; then
+            echo "[skip $COUNT] $NAME (checkpoint exists)"
+            SKIPPED=$((SKIPPED+1)); continue
+          fi
+
+          CMD="$PY gflow.py \
+            --name ${NAME} \
+            --quetzal_ckpt ${QUETZAL_CKPT} \
+            --objective ${obj} \
+            --reward_beta ${beta} \
+            $(reward_flags "$reward") \
+            $(guide_flags "$guide") \
+            $(replay_flags "$replay") \
+            --max_epochs ${MAX_EPOCHS} \
+            --steps_per_epoch ${STEPS} \
+            --eval_n 0 \
+            --final_n 0 \
+            --hist_every_n_epochs 0 \
+            --no_fcd_enabled \
+            --no_eval_base"
+
+          hr; echo "[run $COUNT] $NAME"; echo "$CMD"; hr
+          [[ "$DRY" == "1" ]] && continue
+
+          throttle
+          (
+            eval "$CMD" > "${LOGDIR}/${NAME}.log" 2>&1
+            RC=$?
+            [[ $RC -ne 0 ]] && echo "[warn] $NAME exited $RC (see ${LOGDIR}/${NAME}.log)"
+          ) &
+          echo "[launch $COUNT] $NAME (pid $!, active=$(( $(jobs -r -p | wc -l) )))"
+          RAN=$((RAN+1))
+          sleep 2   # stagger so parallel runs don't grab VRAM in lockstep
+        done
+      done
+    done
+  done
+done
+
+wait
+END_TS=$(date +%s)
+hr
+say "guide sweep done: enumerated=$COUNT ran=$RAN skipped=$SKIPPED"
+say "elapsed $(( (END_TS-START_TS)/60 )) min | logs $LOGDIR | checkpoints ${CKPT_ROOT}/sweep-*"
+say "next: scripts/04_dump_guides.sh"
+hr

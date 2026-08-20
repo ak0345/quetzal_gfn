@@ -95,7 +95,7 @@ def clean_one(smi):
       - single fragment (drop salts / mixtures -- '.' in SMILES)
       - only the GEOM atom set
       - drop charged species (EDM data is neutral)
-    Adjust these to match YOUR base model's exact preprocessing if it differs;
+    Adjust these to match the base model's preprocessing where it differs;
     an in-distribution claim is only as honest as the filter matching.
     """
     mol = Chem.MolFromSmiles(smi)

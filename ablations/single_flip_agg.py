@@ -1,31 +1,31 @@
 #!/usr/bin/env python3
 """
-aggregate_single_flips.py -- collect single_flip_ablation.py reports into one CSV
-(plus a pooled per-position table and an optional combined plot).
+Collect single_flip_ablation.py reports into one CSV, a pooled per-position
+table, and an optional combined plot.
 
-Reads every flip_report*.json written by single_flip_ablation.py, whether they
-sit flat in one directory (the run_all_ckpts.sh layout, flips/flip_report_<run>.json)
-or one-per-subdirectory (flips/<run>/flip_report.json). Pulls the causal-chain
-metrics at each temperature, parses the run name into axes, and writes a table
-sorted so you can scan the ceiling signature across the whole sweep.
+Reads every flip_report*.json, whether the reports sit flat in one directory as
+<root>/flip_report_<run>.json or one per subdirectory as
+<root>/<run>/flip_report.json. Pulls the causal-chain metrics at each
+temperature, parses the run name into experimental axes, and writes a table
+sorted so the pattern can be read across the whole sweep.
 
-The columns that matter for the ceiling argument:
-  flip_rate_high_gap  -- can the guide flip HARD (prior-dominant) decisions?
-                         The ceiling predicts ~0 here regardless of guide/reward.
-  flip_rate_low_gap   -- flips on already-close decisions (where the guide CAN act)
-  sample_flip_rate    -- overall decision-change rate
-  mean_prior_top1_gap -- how saturated the prior is (bigger = harder ceiling)
+The columns that carry the result:
+  flip_rate_high_gap  -- flips on decisions where the prior's top-1 margin
+                         exceeds 8, which is ~72% of them
+  flip_rate_low_gap   -- flips on decisions that were already close
+  sample_flip_rate    -- the overall decision-change rate
+  mean_prior_top1_gap -- how confident the prior is at these states
 
-POOLING. Group summaries are computed from the RAW counts each report carries,
+POOLING. Group summaries are computed from the raw counts each report carries,
 by summing numerators and denominators and dividing once at the end. Averaging
 the per-run rates instead would weight a run of 400 states the same as one of
-40,000, and at deep sequence positions (where only a few long molecules survive)
-that difference is large. Positions no molecule ever reached stay empty rather
-than counting as zero-flip.
+40,000, and at deep sequence positions -- where only a few long molecules
+survive -- that difference is large. Positions no molecule ever reached stay
+empty rather than counting as zero-flip.
 
 Usage:
-    python aggregate_single_flips.py --flips_root flips
-    python aggregate_single_flips.py --flips_root flips --plot \
+    python ablations/single_flip_agg.py --flips_root results/flips-guide
+    python ablations/single_flip_agg.py --flips_root results/flips-guide --plot \
         --guides hidden,base --temp 1.0 --min_states 200
 
         

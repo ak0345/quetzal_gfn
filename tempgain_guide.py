@@ -1,55 +1,49 @@
 """
-tempgain_guide.py -- a guide architecture that attacks the SATURATED-PRIOR CEILING.
+Guide architecture with a learned per-state temperature on the prior and a
+learned per-state gain on the residual.
 
-Diagnosis recap (osim, beta=20, flow route):
-  * Quetzal's proj_logits are the FINAL layer; gap between top-1 and top-2 logit
-    is > 8 on ~72% of decisions (>16 on ~50%). The plain residual guide can only
-    flip the ~18% of decisions where the gap < 4, so aggregate steering is capped.
-  * Scaling the plain residual past ~2x drives validity to 0 (B_scale_sweep) --
-    you cannot brute-force through the ceiling with a global gain.
+    guided_logits = prior_logits / T(h)  +  g(h) * residual(h)
 
-MECHANISM (both learned per-state, so validity is protected):
-    guided_logits = prior_logits / T(h)  +  g(h) * guide_residual(h)
+The residual guide competes against logits whose top-1 margin averages 16.4,
+with the margin above 8 on ~72% of decisions. This architecture is meant to
+change the terms of that competition rather than the size of the residual:
 
-  T(h)  : a learned per-STATE temperature on the prior. T > 1 SOFTENS, shrinking
-          the huge top-1 gaps into a range the residual can contest; T < 1
-          sharpens. Learned per state, so the net can choose T~1 where softening
-          would break validity and T>1 only where there is room to steer.
-  g(h)  : a learned per-STATE gain on the residual, so the guide amplifies its
-          logits only where it is confident -- avoiding the global over-powering
-          that collapsed validity when the residual was scaled uniformly.
+  T(h)  A per-state temperature. T > 1 compresses the margin so a residual of
+        unchanged magnitude can contest decisions it could not otherwise reach;
+        T < 1 sharpens. Learned per state, because a uniform softening applies
+        where it helps and where it destroys validity alike.
+  g(h)  A per-state gain, so the residual is amplified only where the guide is
+        confident. A constant multiplier instead raises effect size up to
+        roughly 4x and then reverses as validity collapses.
 
-Both heads are ZERO-INIT so the model STARTS at exactly the frozen prior's
-behaviour (T=1, g=1) and only departs as training moves it.
+Both heads start at the identity (T = 1, g = 1), so training begins at the
+frozen prior's behaviour.
 
-=============================================================================
-FIXED: the temperature head was inert in every run before this version.
-=============================================================================
-The previous parameterisation was
+The temperature was inactive in the runs reported in the paper
+--------------------------------------------------------------
+Those runs used the parameterisation
 
-    T = 1 + (softplus(raw) - ln 2)          # claimed T >= 1
+    T = 1 + (softplus(raw) - ln 2)
 
-which actually spans (1 - ln 2, inf) = (0.307, inf) -- it does NOT enforce
-T >= 1. The floor was supplied instead by `clamp(T, min=1.0)` in the forward
-pass, and clamp has ZERO GRADIENT below the threshold. So the moment training
-pushed the head under 1 it stopped receiving gradient and froze: the observed
-T of 0.73-0.80, flat in the margin across every trained checkpoint, is a head
-stuck in the clamp's dead zone, not a head that learned to sharpen. The
-mechanism never engaged in either direction.
+which spans (1 - ln 2, inf) = (0.307, inf) and does not enforce T >= 1. The
+floor came instead from clamp(T, min=1.0) in the forward pass, and clamp has
+zero gradient below its threshold: once training pushed the head under 1 it
+stopped receiving gradient and froze. The T of 0.73-0.80 read off every trained
+checkpoint, flat in the margin, is a head stuck in that dead zone rather than
+one that learned to sharpen, and the effective temperature was 1 at every state.
+Runs labelled TEMPGAIN therefore report a gain-scaled residual guide, not a test
+of prior softening.
 
-This version:
-  * parameterises T in LOG space, T = exp(s * tanh(raw)), which is exactly 1 at
-    raw=0, symmetric (softening and sharpening equally reachable and equally
-    penalised, so a learned T<1 is a FINDING rather than an artifact), and
-    bounded by construction in [1/e^s, e^s] so no clamp is needed anywhere;
-  * has a non-vanishing gradient over that whole range, so the head can leave a
-    region it has entered;
-  * records per-state diagnostics (mean T, fraction softening, resulting margin
-    compression) so "did the mechanism engage" is measured, not assumed;
-  * makes forward() refuse to silently drop the temperature.
+This version parameterises T in log space as T = exp(s * tanh(raw)): exactly 1
+at raw = 0, symmetric so softening and sharpening are equally reachable and
+equally penalised (a learned T < 1 becomes a finding rather than an artifact),
+and bounded in [e^-s, e^s] by construction so no clamp is needed and the
+gradient never dies. It also records per-state diagnostics -- mean T, fraction
+softening, resulting margin compression -- so whether the mechanism engaged is
+measured rather than assumed, and refuses to drop the temperature silently.
 
-Old checkpoints are NOT loadable into this class (different parameter meaning);
-see `migrate_note()`.
+Checkpoints from the previous parameterisation are not loadable here; see
+`migrate_note()`.
 """
 import math
 import warnings
@@ -76,9 +70,9 @@ class PriorTemperature(nn.Module):
       raw < 0            -> T < 1, sharpening
       T in [e^-s, e^s]   -> bounded without a clamp, so the gradient never dies
 
-    `allow_sharpening=False` restricts to T >= 1 the correct way -- through the
-    parameterisation (softplus in log space), which stays differentiable
-    everywhere -- rather than by clamping the output, which does not.
+    `allow_sharpening=False` restricts to T >= 1 through the parameterisation
+    (softplus in log space), which stays differentiable everywhere, rather than
+    by clamping the output, which does not.
     """
 
     def __init__(self, d_model, hidden=128, max_log_T=math.log(4.0),
@@ -98,15 +92,17 @@ class PriorTemperature(nn.Module):
         if self.allow_sharpening:
             log_T = self.max_log_T * torch.tanh(raw)
         else:
-            # T >= 1 enforced through the PARAMETERISATION, not a clamp on the
+            # T >= 1 through the parameterisation rather than a clamp on the
             # output: softplus is positive and differentiable everywhere, so a
-            # head pushed toward the floor keeps receiving gradient and can come
-            # back -- which is precisely what the old clamp prevented.
-            # The offset puts log_T at _EPS_LOG_T (not exactly 0) at init, so
-            # T starts at 1.001 rather than 1: softplus never attains its
-            # infimum, and buying exact identity here would mean a zero
-            # gradient at the init point. Prefer allow_sharpening=True, whose
-            # tanh parameterisation gives exact identity AND a live gradient.
+            # head pushed toward the floor keeps receiving gradient and can
+            # leave again.
+            #
+            # The offset puts log_T at _EPS_LOG_T rather than exactly 0 at
+            # initialisation, so T starts at 1.001: softplus never attains its
+            # infimum, and exact identity here would cost a zero gradient at
+            # the initialisation point. allow_sharpening=True is preferable --
+            # its tanh parameterisation gives exact identity and a live
+            # gradient.
             log_T = F.softplus(raw + _SOFTPLUS_OFFSET)
             log_T = self.max_log_T * torch.tanh(log_T / self.max_log_T)
         return torch.exp(log_T)
@@ -130,9 +126,9 @@ class ResidualGain(nn.Module):
     def forward(self, h):
         g = F.softplus(self.net(h).squeeze(-1))          # >= 0, starts at 1
         if self.max_gain is not None:
-            # smooth ceiling: the scale sweep showed validity collapses past
-            # ~4x, so an unbounded gain can walk the policy off the valid
-            # region before the reward signal catches up
+            # Smooth ceiling. The residual-scale sweep shows validity
+            # collapsing past ~4x, so an unbounded gain can walk the policy off
+            # the valid region faster than the reward signal compensates.
             g = self.max_gain * torch.tanh(g / self.max_gain)
         return g
 
@@ -142,8 +138,8 @@ class TempGainGuide(nn.Module):
 
         guided = prior_logits / T(h)[:, None]  +  g(h)[:, None] * residual(h)
 
-    The base `guide` is your existing LogitGuide, so a trained one can be
-    warm-started.
+    The base `guide` is a LogitGuide, so an already-trained residual can be
+    warm-started and only the two heads need to move.
     """
 
     def __init__(self, base_guide, d_model, hidden=128,
@@ -164,7 +160,7 @@ class TempGainGuide(nn.Module):
     # ---------------------------------------------------------------- core
 
     def guided_logits(self, prior_logits, h):
-        """The full mechanism. No clamp: T is bounded by its parameterisation."""
+        """The full mechanism. No clamp -- T is bounded by its parameterisation."""
         resid = self.guide(h)
         if self.gain is not None:
             g = self.gain(h)
@@ -182,11 +178,11 @@ class TempGainGuide(nn.Module):
         return out
 
     def forward(self, h, prior_logits=None):
-        """With prior_logits: the full guided logits. Without: the gained
-        residual ONLY -- the temperature cannot be applied, so a caller doing
-        `prior_logits + guide(h)` silently gets a residual-plus-gain guide.
-        That silent degradation is what made the last set of runs
-        uninterpretable, so it now warns once."""
+        """With prior_logits, the full guided logits. Without, the gained
+        residual only: the temperature cannot be applied, so a caller writing
+        `prior_logits + guide(h)` gets a residual-plus-gain guide instead of
+        this architecture. That degradation is silent and is what made the
+        earlier runs report the wrong mechanism, so it warns once."""
         if prior_logits is not None:
             return self.guided_logits(prior_logits, h)
         if self.temp is not None and not self._warned_forward:
@@ -202,8 +198,8 @@ class TempGainGuide(nn.Module):
         return resid
 
     def residual_only(self, h):
-        """Explicit, non-warning version of the degraded path, for call sites
-        that genuinely want the additive part (e.g. residual-norm diagnostics)."""
+        """The additive part alone, without the warning, for call sites that
+        genuinely want it -- residual-norm diagnostics, for instance."""
         resid = self.guide(h)
         if self.gain is not None:
             resid = self.gain(h).unsqueeze(-1) * resid
@@ -218,15 +214,16 @@ class TempGainGuide(nn.Module):
             st["T_mean"] = T.mean().item()
             st["T_min"] = T.min().item()
             st["T_max"] = T.max().item()
-            # the number that says whether the mechanism engaged at all
+            # whether the mechanism engaged at all
             st["T_frac_softening"] = (T > 1.0).float().mean().item()
             st["T_frac_sharpening"] = (T < 1.0).float().mean().item()
         if g is not None:
             st["gain_mean"] = g.mean().item()
             st["gain_max"] = g.max().item()
         st["resid_norm"] = resid.norm(dim=-1).mean().item()
-        # margin BEFORE and AFTER softening: the mechanism's whole purpose is to
-        # shrink this, so log it rather than inferring it from the flip rate
+        # Margin before and after softening. Shrinking it is the mechanism's
+        # purpose, so record it directly rather than inferring it from the
+        # flip rate.
         if softened_logits.shape[-1] >= 2:
             top2 = torch.topk(softened_logits, 2, dim=-1).values
             st["margin_after_T"] = (top2[:, 0] - top2[:, 1]).mean().item()
@@ -236,9 +233,9 @@ class TempGainGuide(nn.Module):
 
     @torch.no_grad()
     def margin_profile(self, prior_logits, h, bins=(0, 2, 4, 8, 16, 1e9)):
-        """Mean T per prior-margin bin -- the figure that shows whether the head
-        learned to soften WHERE THE PRIOR IS CONFIDENT (the design intent) or
-        applied a flat temperature everywhere (no state-dependence learned)."""
+        """Mean T per prior-margin bin: whether the head learned to soften
+        where the prior is confident, which is the design intent, or applied a
+        flat temperature everywhere, meaning no state dependence was learned."""
         if self.temp is None:
             return {}
         top2 = torch.topk(prior_logits, 2, dim=-1).values

@@ -1,5 +1,14 @@
 #!/bin/bash
-
+#
+# Pretrain Quetzal on GEOM-Drugs across 4 GPUs on one node. Upstream utility:
+# this project uses the released GEOM checkpoint and freezes it, so run this
+# only to substitute a different prior.
+#
+# Submit from the repository root:  sbatch scripts/prior/train_geom_slurm.sh
+#
+# To continue past the 24h limit, resubmit with the same --name, or pass
+# --resume_path=<ckpt>.
+#
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=4
 #SBATCH --partition=compute_full_node

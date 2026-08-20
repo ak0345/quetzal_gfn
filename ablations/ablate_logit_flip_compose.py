@@ -1,35 +1,35 @@
 """
-ablate_logit_flip.py -- does the guide's residual actually CHANGE Quetzal's
-decisions, or just perturb a distribution whose argmax never moves?
+Does the guide's residual change the prior's decisions, or only perturb a
+distribution whose argmax never moves?
 
-Panel A of the earlier ablation measured residual NORM and KL(guided||prior) at
-prior-drawn states. But a nonzero residual with nonzero KL can STILL change no
-actual decision: if the prior logit for the winning atom towers over the rest
-(prior_logit_norm was ~6841 here), a residual of a few units shifts the softmax
-mass yet never flips the argmax -> the SAME atom is sampled every time -> the
-guide is behaviorally inert even though it "adds logits".
+This is the composed-sampler counterpart to single_flip_ablation.py.
 
-This probe walks the causal chain end to end, per guide:
+Residual norm and KL(guided||prior) are not enough on their own: a nonzero
+residual with nonzero KL can still change no decision. Where the prior's logit
+for the winning atom towers over the rest, a residual of a few units shifts
+softmax mass without flipping the argmax, so the same atom is sampled every time
+and the guide is behaviourally inert despite adding logits.
 
-  1. DELIVERY : is (prior+guide) != prior at the logit tensor level? (catches a
-                wiring bug where the residual is computed but dropped.)
-  2. DECISION : over the SAME state, does the guide change the top-1 atom
-                (argmax flip), and by how much does it move probability onto
-                atoms the prior disfavored? (softmax-survival test.)
-  3. SAMPLE   : with paired RNG (same uniform draw for prior and guided), does
-                the SAMPLED next-atom differ? -> action-flip rate. A guide that
-                never flips a sampled action cannot change any molecule.
-  4. POSITION : flip rate as a function of sequence position (early flips
-                cascade into very different molecules; late flips barely matter).
-  5. MOLECULE : do guided trajectories reach different final reward than the
-                prior baseline they branched from? (paired reward delta.)
+The probe walks the causal chain end to end, per guide:
 
-All measured along trajectories rolled by the PRIOR (so every guide is compared
-on the same realistic state distribution), plus a check along the guide's OWN
-rollout (its residual could matter more on states it actually visits).
+  1. DELIVERY : does (prior + guide) differ from prior at the logit tensor
+                level? Catches a residual that is computed and then dropped.
+  2. DECISION : on the same state, does the guide change the top-1 atom, and how
+                much probability does it move onto atoms the prior disfavoured?
+  3. SAMPLE   : with paired RNG -- the same uniform draw for prior and guided --
+                does the sampled next atom differ? A guide that never flips a
+                sampled action cannot change any molecule.
+  4. POSITION : flip rate against sequence position. Early flips cascade into
+                very different molecules; late ones barely matter.
+  5. MOLECULE : do guided trajectories reach a different final reward than the
+                prior trajectory they branched from?
 
-Usage (mirror compose.py flags):
-    python ablate_logit_flip.py \
+Everything is measured along trajectories rolled by the PRIOR, so every guide is
+compared on the same state distribution, plus a check along the guide's own
+rollout in case its residual matters more on states it actually visits.
+
+Usage (the guide flags mirror gflow_multi's):
+    python ablations/ablate_logit_flip_compose.py \
         --guide_ckpts "...c0/last.ckpt,...c1/last.ckpt,...c2/last.ckpt,...c3/last.ckpt" \
         --guide_labels "c0,c1,c2,c3" --route policy --n_traj 400
 """

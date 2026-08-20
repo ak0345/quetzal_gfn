@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
 """
-final_dump.py -- STANDALONE, SEEDED molecule dump + full metric/plot suite from
-a trained guide checkpoint. Superset of final_dump.py.
+Seeded molecule dump and metric suite from a trained guide checkpoint.
+
+Generates --n molecules from the guided policy and, unless --base_from points at
+an existing base dump, the same number from the frozen prior, then scores both
+and writes everything the aggregator needs.
 
 Outputs (in --out_dir):
   guided_smiles.txt, base_smiles.txt
   guided_rewards.npy, base_rewards.npy
   guided_molecules.pt, base_molecules.pt        (atoms+coords, for re-analysis)
-  reward_hist.png            base vs guided reward overlay (the ceiling figure)
+  reward_hist.png            base vs guided reward overlay
   descriptor_grid.png        MW/logP/TPSA/natoms/nrings, guided/base/GEOM overlay
   stability_bar.png          atom & mol stability, guided vs base
   per_molecule.csv           smiles, log_reward, source
-  dump_summary.json          ALL numbers (seed, rates, reward stats, FCD,
-                             stability, descriptor-Wasserstein) -- the aggregator
-                             reads this.
+  dump_summary.json          every number: seed, valid/unique rates, reward
+                             statistics, FCD, stability, descriptor Wasserstein
+                             distances. This is what aggregate_dumps.py reads.
 
 Usage:
-  python final_dump2.py --ckpt .../last.ckpt --n 5000 --seed 0 \
-      --ref_smiles geom_ref.smi --dataset geom --out_dir dumps/<name>/seed0
+  python final_dump.py --ckpt .../last.ckpt --n 5000 --seed 0 \
+      --ref_smiles reference/geom_drugs_smiles.txt --dataset geom \
+      --out_dir results/dumps/<name>/seed0
 """
 import os
 import json

@@ -1,34 +1,35 @@
 """
-diag_training_logs.py -- WHY did each guide fail to learn to steer?
-Reads the TRAINING curves from wandb (no GPU) and partitions the components into
-fix categories, addressing:
+Read training curves from W&B and classify what limited each run. Needs no GPU.
 
-  MECHANISM 1: terminal loss never converged / no valid terminals.
-    In DB the guide learns reward ONLY through the terminal residual. If
-    db/terminal_loss plateaued high, or db/frac_valid_terminal ~ 0 (no valid
-    molecules to learn from), the flow head never learned the reward direction
-    -> residual is noise -> KL~0 at eval. We report terminal-loss trajectory,
-    its final vs initial value, and frac_valid_terminal over training.
+The question it answers is whether a run's weak steering came from training or
+from the prior, which the final metrics alone cannot distinguish.
 
-  MECHANISM 5: flow head vs policy fighting (DB).
-    The same residual must satisfy interior flow-matching AND the terminal reward
-    condition. If interior dominates, the reward term gets no say -> guide matches
-    flow consistency but not reward. We report the interior:terminal loss ratio
-    over training.
+  TERMINAL CONVERGENCE.
+    Under DB the guide sees the reward only through the terminal residual. A
+    db/terminal_loss that plateaus high, or a db/frac_valid_terminal near zero
+    meaning there were no valid molecules to learn from, leaves the flow head
+    without the reward direction. Reports the terminal-loss trajectory, its final
+    against its initial value, and frac_valid_terminal over training.
 
-  Plus supporting signals when present: train/reward_valid_frac, train/log_reward_*
-  (did the sampled reward ever climb?), guide weight growth proxy if logged.
+  INTERIOR VERSUS TERMINAL.
+    The same residual has to satisfy interior flow-matching and the terminal
+    reward condition at once. Where the interior term dominates, the reward gets
+    no say and the guide matches flow consistency instead. Reports the
+    interior-to-terminal loss ratio over training.
+
+  Plus supporting signals where logged: train/reward_valid_frac and
+  train/log_reward_*, i.e. whether the sampled reward ever climbed.
 
 Verdict per run:
-  - "terminal never converged"  -> retrain longer / higher lr on flow head.
-  - "no valid terminals"        -> reward floor too high, or axis unreachable.
-  - "interior dominates"        -> lower db_interior_weight.
-  - "reward never climbed"      -> dead axis or exploration problem (see rollout probe).
-  - "converged & reward climbed"-> training was fine; weak steering is the
-                                    saturated-prior ceiling, not a training bug.
+  - "terminal never converged"   train longer, or raise the flow-head lr
+  - "no valid terminals"         reward floor too high, or the axis unreachable
+  - "interior dominates"         lower db_interior_weight
+  - "reward never climbed"       a dead axis, or exploration; see diag_rollout.py
+  - "converged & reward climbed" training was fine, and the weak steering is a
+                                 property of the prior rather than a bug
 
 Usage:
-    python diag_training_logs.py \
+    python ablations/diag_training_logs.py \
         --entity YOUR_ENTITY --project quetzal-gfn \
         --runs "gfn-geom-osim-comp0--db-beta50,gfn-geom-osim-comp1--db-beta50,gfn-geom-osim-comp2--db-beta50,gfn-geom-osim-comp3--db-beta50" \
         --out_dir logs/quetzal-gfn/osim-compose-db/training-diag

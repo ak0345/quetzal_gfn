@@ -1,22 +1,25 @@
 """
-ablate_singles_weights.py -- two ablations:
+Two ablations on the composition track.
 
-  #3 SINGLE-GUIDE EFFECT (fixed).
-     The earlier C_singles numbers were degenerate (identical -2.679 across all
-     guides) because the single-guide path went through the HARMONIC operator with
-     one component: harmonic on a single guide gives lognum == logden -> comp == 0
-     -> UNIFORM distribution -> garbage samples. Here we sample each guide alone
-     with a correct single-guide policy (prior + guide, softmax-normalized), no
-     operator, so the per-guide effect size is real.
+  SINGLE-GUIDE EFFECT.
+     Each guide sampled alone under a direct single-guide policy -- prior plus
+     guide, softmax-normalised -- with no composition operator involved.
 
-  #4 WEIGHT-SKEW SWEEP.
-     Equal 0.25 weights let three near-prior guides dilute the one that steers.
-     Sweep composition weights (e.g. all mass on c3, or skewed mixes) and measure
-     composed effect size + validity/uniqueness, to quantify how much dropping the
-     dead guides recovers.
+     Routing a single guide through the harmonic operator instead is degenerate:
+     with one component lognum equals logden, the composed term is zero, and the
+     result is a uniform distribution over the vocabulary. That produces
+     identical effect sizes across guides and is an artifact of the operator, not
+     a property of the guides.
+
+  WEIGHT-SKEW SWEEP.
+     Equal weights let near-prior components dilute whichever one is steering.
+     Sweeps the composition weights, from uniform to all mass on a single
+     component, and reports composed effect size alongside validity and
+     uniqueness. Concentrating weight changes the effect size but does not lift
+     it out of the band the sweep reports.
 
 Usage:
-    python ablate_singles_weights.py \
+    python ablations/ablate_singles_weights.py \
         --guide_ckpts "...c0,...c1,...c2,...c3" --guide_labels "c0,c1,c2,c3" \
         --route policy --product_kind poe --train_betas "50,50,50,50" \
         --n_samples 1000 \

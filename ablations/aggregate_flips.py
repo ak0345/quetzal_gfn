@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-aggregate_flips.py -- collect flip_ablation.py reports into one CSV.
+Collect per-run flip reports laid out one-per-subdirectory into a single CSV.
 
-Reads every flips/<name>/flip_report.json, pulls the causal-chain metrics at
-each temperature, parses the model name into axes, and writes a table sorted so
-you can scan the ceiling signature across the whole sweep.
+Reads every <flips_root>/<name>/flip_report.json, pulls the causal-chain metrics
+at each temperature, parses the run name into experimental axes, and writes a
+table sorted so the pattern can be read across the whole sweep.
 
-The columns that matter for the ceiling argument:
-  flip_rate_high_gap  -- can the guide flip HARD (prior-dominant) decisions?
-                         The ceiling predicts ~0 here regardless of guide/reward.
-  flip_rate_low_gap   -- flips on already-close decisions (where the guide CAN act)
-  sample_flip_rate    -- overall decision-change rate
-  mean_prior_top1_gap -- how saturated the prior is (bigger = harder ceiling)
+See single_flip_agg.py for the flat-directory layout, which also pools the
+per-position curves.
+
+The columns that carry the result:
+  flip_rate_high_gap  -- flips on decisions where the prior's top-1 margin
+                         exceeds 8, which is ~72% of them
+  flip_rate_low_gap   -- flips on decisions that were already close
+  sample_flip_rate    -- the overall decision-change rate
+  mean_prior_top1_gap -- how confident the prior is at these states
 """
 import os
 import re

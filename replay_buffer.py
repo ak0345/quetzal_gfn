@@ -7,14 +7,14 @@ Discovery in GFlowNets" (arXiv:2307.07674). We store terminal trajectories
 (the sampled ATOM sequence + coords + reward) generated on-policy, and mix a
 fixed fraction of replayed trajectories into each training batch.
 
-KEY DIFFERENCE from a vanilla RL replay buffer
------------------------------------------------
-The guide policy changes every step, so we CANNOT reuse the log-probs stored at
-insertion time -- they are stale. Instead we store only the *atom sequence*
-(and coords, needed to re-encode the frozen prior) and RE-ROLL the guide over
-that fixed sequence at sample time in a teacher-forced pass. That recomputes
-grad-attached logpf under the current guide. This is what makes the replayed
-term a valid gradient signal for DB and RTB.
+Difference from a vanilla RL replay buffer
+------------------------------------------
+The guide policy changes every step, so the log-probs recorded at insertion time
+are stale and cannot be reused. The buffer stores only the atom sequence, plus
+the coordinates needed to re-encode the frozen prior, and re-rolls the guide
+over that fixed sequence at sample time in a teacher-forced pass. That recomputes
+a gradient-attached logpf under the current guide, which is what makes the
+replayed term a valid gradient signal for DB and RTB.
 
 Storage is atom-sequence + coords + scalar reward. Coords are frozen-prior
 outputs; storing them avoids re-running the (stochastic, expensive) coordinate

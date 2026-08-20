@@ -1,37 +1,40 @@
 #!/usr/bin/env python3
 """
-single_flip_ablation.py -- logit-FLIP diagnostic for a SINGLE-GUIDE checkpoint
-(the mechanistic ceiling test), ported from the composition-only version in
-gflow_multi's flip diagnostics.
+Coupled-flip diagnostic for a single-guide checkpoint.
 
-THE TEST (why it matters for the thesis): roll trajectories with the FROZEN
-PRIOR; at every atom-decision state, compare the prior's next-atom distribution
-against the GUIDED one on the IDENTICAL state. Measure:
+Aggregate reward differences cannot separate a guide that is inert from one that
+acts but is mis-directed, so this measures the effect on the decision itself.
+
+Trajectories are rolled by the FROZEN PRIOR; at every atom-decision state the
+prior's next-atom distribution is compared against the guided one on the
+IDENTICAL state. Because the trajectories belong to the prior, every guide
+architecture is compared on the same state distribution. Reported:
   * delivered_frac   -- does the guide's residual reach the logits at all?
                         (~0 => wiring bug: guide not applied)
   * argmax_flip_rate -- how often the guided argmax != prior argmax
   * sample_flip_rate -- how often a paired-RNG sample differs (the real "did the
                         decision change" number)
   * mean_total_variation / mean_KL -- how much probability mass the guide moves
-  * mean_prior_top1_gap -- how dominant the prior's top-1 logit is (the CEILING:
-                        a large gap means the residual can't flip the argmax)
+  * mean_prior_top1_gap -- how dominant the prior's top-1 logit is, i.e. how
+                        large a residual would have to be to change the decision
   * flip_rate_by_position -- where in the sequence (if anywhere) flips happen.
                         Reported over --n_report_pos positions (default 64).
                         Molecules terminate at different lengths, so positions
                         no trajectory ever reached come back as null, NOT 0.0 --
                         "no molecule was ever this long" is not "the guide never
                         flipped here", and averaging the two together would
-                        drag the tail of the curve to a fake zero.
+                        drag the tail of the curve to a false zero.
 
-THE CEILING SIGNATURE: delivered~1, argmax~0, sample~0, with a LARGE
-mean_prior_top1_gap => the residual reaches the logits but never changes a
-decision because the prior's top-1 is too dominant. That's the saturated prior.
+Reading the result: delivered ~1 with argmax ~0 and sample ~0, alongside a large
+mean_prior_top1_gap, means the residual reaches the logits at every state but
+never changes a decision, because the prior's top-1 is too dominant. Delivery
+near 0 instead means the residual was computed and not applied -- a wiring
+failure rather than a bound, which is why the two are measured separately.
 
-Works for ALL guide types (LogitGuide/base, TempGainGuide, HiddenGuide): the
-guided logits are computed via the same dispatch gflow.py uses, then the residual
-is derived as (guided_logits - prior_logits) for the metrics -- so it is correct
-regardless of whether the guide adds an output residual or perturbs the hidden
-state.
+Works for every guide type. The guided logits are computed through the same
+dispatch gflow.py uses, and the residual is then derived as
+(guided_logits - prior_logits), so the metrics are correct whether the guide
+adds an output residual or perturbs the hidden state.
 
 Usage:
   python single_flip_ablation.py \
@@ -50,7 +53,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-# reuse final_dump2's correct checkpoint loading (config unwrap + guide-type
+# final_dump's checkpoint loading (config unwrap + guide-type
 # detection + [FATAL] guards) so we never silently measure an untrained guide.
 import final_dump as fd2
 from chem import GEN, STOP, PAD, QM9_MASK
@@ -303,7 +306,7 @@ def main():
     max_steps = args.max_steps or None            # None => auto in flip_diagnostics
     label = args.label or _label_for(args.ckpt)
 
-    # ---- load checkpoint via final_dump2's hardened loader ----
+    # ---- load the checkpoint through final_dump's loader ----
     # (config unwrap + guide-type assert + [FATAL] on missing guide weights)
     import gflow
     from gflow import LitGFlowNet

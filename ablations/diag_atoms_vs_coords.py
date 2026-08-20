@@ -1,15 +1,20 @@
 """
-diag_atoms_vs_coords.py -- WHERE does the reward live: atom types (which the guide
-CAN change) or 3D coordinates (frozen diffusion, the atom guide CANNOT touch)?
+Where does the reward live: in the atom types a guide can change, or in the 3D
+coordinates the frozen diffusion produces and an atom-type guide cannot touch?
 
-STANDALONE single-guide version: loads ONE LitGFlowNet checkpoint directly (like
-final_dump.py) -- no Composer, no composition list-flags. Just --ckpt.
+This matters because every intervention in this project acts on p_atom only. A
+reward carried substantially by geometry would be out of reach of every method
+tested, and a flat result against it would say nothing about steering.
 
-Tests (on base-prior molecules, no training):
-  T1 ATOM-SENSITIVITY: force each atom to the guide's top choice, keep base coords,
-     re-perceive graph, re-score. Big change => atoms are a lever (fix B can help).
-  T2 COORD-SENSITIVITY: keep atoms fixed, re-roll coordinate diffusion several times,
-     re-score. High reward variance from coords alone => coordinates dominate.
+Takes one checkpoint via --ckpt; no Composer and no composition list flags.
+
+Tests, run on frozen-prior molecules with no training:
+  T1 ATOM SENSITIVITY  force each atom to the guide's top choice, keep the base
+     coordinates, re-perceive the graph and re-score. A large change means atom
+     types are a lever the guide can pull.
+  T2 COORD SENSITIVITY keep the atoms fixed and re-roll the coordinate diffusion
+     several times, re-scoring each. High reward variance from the coordinates
+     alone means geometry dominates the objective.
 
 Usage:
   python diag_atoms_vs_coords.py \
