@@ -100,24 +100,61 @@ WANDB_PROJECT="${WANDB_PROJECT:-quetzal-gfn}"
 RUN_PREFIX="${RUN_PREFIX:-compose-osim-c}"
 RUN_SUFFIX="${RUN_SUFFIX:--hidden-db-b${BETA}}"
 
-# ---------------------- resolve the component checkpoints --------------------
-CKPTS=""; LABELS=""; BETAS=""; WEIGHTS=""; EVAL_COMPONENTS=""
-NCOMP=$(echo "$COMPONENTS" | wc -w | tr -d ' ')
-W=$(awk -v n="$NCOMP" 'BEGIN{printf "%.3f", 1.0/n}')
-for c in $COMPONENTS; do
-  name="${RUN_PREFIX}${c}${RUN_SUFFIX}"
-  ckpt=$(resolve_ckpt "$name") || { echo "[warn] no checkpoint for $name"; continue; }
-  CKPTS="${CKPTS:+$CKPTS,}${ckpt}"
-  LABELS="${LABELS:+$LABELS,}c${c}"
-  BETAS="${BETAS:+$BETAS,}${BETA}"
-  WEIGHTS="${WEIGHTS:+$WEIGHTS,}${W}"
-  EVAL_COMPONENTS="${EVAL_COMPONENTS:+$EVAL_COMPONENTS,}gcomp:${BENCH}:${c}=c${c}"
-done
+# ---------------------- resolve the guide checkpoints ------------------------
+# Two ways in.
+#
+#   RUNS="name1 name2 ..."  an explicit list of run names under $CKPT_ROOT, or
+#                           GUIDE_CKPTS="/path/a.ckpt,/path/b.ckpt" for paths
+#                           outside it. Use this to probe the SWEEP guides,
+#                           which are not indexed by component. The margin,
+#                           residual-scale and temperature figures all work on
+#                           any set of guides.
+#
+#   COMPONENTS + RUN_PREFIX/RUN_SUFFIX   the per-component guides from stage 2,
+#                           which is what the composition figure needs, since
+#                           "each component alone" and "composition weights" are
+#                           only meaningful for a set of component teachers.
+CKPTS="${GUIDE_CKPTS:-}"; LABELS="${GUIDE_LABELS:-}"
+BETAS=""; WEIGHTS=""; EVAL_COMPONENTS=""
+
+if [[ -n "${RUNS:-}" ]]; then
+  for name in $RUNS; do
+    ckpt=$(resolve_ckpt "$name") || { echo "[warn] no checkpoint for $name"; continue; }
+    CKPTS="${CKPTS:+$CKPTS,}${ckpt}"
+    LABELS="${LABELS:+$LABELS,}${name}"
+  done
+elif [[ -z "$CKPTS" ]]; then
+  for c in $COMPONENTS; do
+    name="${RUN_PREFIX}${c}${RUN_SUFFIX}"
+    ckpt=$(resolve_ckpt "$name") || { echo "[warn] no checkpoint for $name"; continue; }
+    CKPTS="${CKPTS:+$CKPTS,}${ckpt}"
+    LABELS="${LABELS:+$LABELS,}c${c}"
+    EVAL_COMPONENTS="${EVAL_COMPONENTS:+$EVAL_COMPONENTS,}gcomp:${BENCH}:${c}=c${c}"
+  done
+fi
+
+# betas and weights are per-guide lists and must match the checkpoint count
+NG=$(awk -F, '{print NF}' <<< "${CKPTS:-}")
+[[ -z "$CKPTS" ]] && NG=0
+if (( NG > 0 )); then
+  W=$(awk -v n="$NG" 'BEGIN{printf "%.3f", 1.0/n}')
+  for ((i=0; i<NG; i++)); do
+    BETAS="${BETAS:+$BETAS,}${BETA}"
+    WEIGHTS="${WEIGHTS:+$WEIGHTS,}${W}"
+  done
+fi
+# the per-component eval spec is only defined for component guides; fall back to
+# the assembled objective so the probes still have something to score against
+if [[ -z "$EVAL_COMPONENTS" ]]; then
+  EVAL_COMPONENTS="${EVAL_REWARDS:-guacamol:hard_${BENCH}=${BENCH}_MPO}"
+fi
 
 need_components () {
   if [[ -z "$CKPTS" ]]; then
-    echo "[skip] no component checkpoints under ${CKPT_ROOT}/${RUN_PREFIX}*${RUN_SUFFIX}"
-    echo "       run scripts/02_train_components.sh, or set RUN_PREFIX/RUN_SUFFIX"
+    echo "[skip] no guide checkpoints found."
+    echo "       point at existing runs:  RUNS=\"run-a run-b\" bash scripts/07_ablations.sh $WHICH"
+    echo "       or paths:                GUIDE_CKPTS=/a.ckpt,/b.ckpt GUIDE_LABELS=a,b ..."
+    echo "       or train components:     bash scripts/02_train_components.sh"
     return 1
   fi
   return 0
