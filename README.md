@@ -122,49 +122,6 @@ wget -O checkpoints/geom.ckpt \
   https://huggingface.co/auhcheng/quetzal/resolve/main/geom.ckpt
 ```
 
-### Trained weights (guides and fine-tuned models)
-
-All checkpoints produced by this work — every guide from the sweep, the
-per-component guides, and every fine-tuning scope — live in one repository:
-
-> **Weights:** [LINK](https://huggingface.co/ak0345/quetzal_gfn)
-
-```bash
-# expected layout: logs/quetzal-gfn/<run name>/checkpoints/last.ckpt
-hf download ak0345/quetzal_gfn --local-dir logs/quetzal-gfn
-```
-
-Set `CKPT_ROOT` if you put them somewhere else.
-
-### Generated molecules
-
-Two separate collections, because they are produced differently and are read by
-different tools.
-
-**Fine-tuning molecule streams** — every molecule generated during a
-`rtb_finetune.py` run, in generation order, with its oracle-call index. This is
-what `harvest_eval.py` slices at a budget.
-
-> **Fine-tuning molecules:** [LINK](https://huggingface.co/datasets/ak0345/quetzal_rtb_ft_mols)
-
-```bash
-# expected layout: results/oracle_gfn_mols/<run name>/molecules.jsonl
-hf download ak0345/quetzal_rtb_ft_mols --repo-type dataset \
-  --local-dir results/oracle_gfn_mols
-```
-
-**Guide molecule dumps** — 5,000 molecules per (guide checkpoint, seed), with
-the full metric suite, as produced by `final_dump.py`. This is what
-`aggregate_dumps.py` builds the master table from.
-
-> **Guide molecules:** [LINK](https://huggingface.co/datasets/ak0345/quetzal_gfn_mols)
-
-```bash
-# expected layout: results/dumps/<run name>/seed<k>/dump_summary.json
-hf download ak0345/quetzal_gfn_mols --repo-type dataset \
-  --local-dir results/dumps
-```
-
 ### The reference corpus
 
 `reference/geom_drugs_smiles.txt` (292k SMILES) ships with the repository and is
