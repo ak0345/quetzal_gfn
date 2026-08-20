@@ -30,8 +30,15 @@
 # updated. If it does not move, the loop is broken and nothing below can be
 # interpreted -- so it gates the rest.
 #
+# SEEDS is opt-in and empty by default, which runs each configuration once with
+# names exactly as before. Setting it runs each configuration once per seed,
+# passing --seed and appending a -s<N> suffix to the run name and record
+# directory. The paper's fine-tuning results are single-seed; this is what makes
+# them repeatable.
+#
 # Usage:
 #   bash scripts/03_finetune.sh                       # sanity + osim + peri
+#   SEEDS="0 42 100" bash scripts/03_finetune.sh      # three seeds per config
 #   bash scripts/03_finetune.sh osim
 #   SKIP_SANITY=1 bash scripts/03_finetune.sh
 #   ONLY=rtb-proj-osim-b10 bash scripts/03_finetune.sh
@@ -44,6 +51,7 @@ require_prior
 WHICH="${1:-all}"
 
 MOLROOT="${MOLROOT:-${RESULTS_ROOT}/oracle_gfn_mols}"
+SEEDS="${SEEDS:-}"          # empty -> one unsuffixed run per configuration
 SKIP_SANITY="${SKIP_SANITY:-0}"
 ONLY="${ONLY:-}"
 DEVICE="${DEVICE:-0}"
@@ -65,6 +73,14 @@ FAILED=(); COMPLETED=()
 # displaces all log-probabilities in a common direction.
 run () {
   local name="$1"; shift
+  # SEED is set by the per-seed loop below; empty means the legacy single run.
+  # The +"${a[@]}" guard is needed because bash 3.2 treats expanding an empty
+  # array under `set -u` as an unbound variable.
+  local seed_arg=()
+  if [[ -n "${SEED:-}" ]]; then
+    name="${name}-s${SEED}"
+    seed_arg=(--seed "$SEED")
+  fi
   if [[ -n "$ONLY" && "$name" != "$ONLY" ]]; then return 0; fi
   if [[ -f "$STATE/$name.done" ]]; then
     say "SKIP  $name (complete; rm $STATE/$name.done to redo)"
@@ -78,6 +94,7 @@ run () {
     --sample_temp 1.0 --rand_eps 0.0
     --logz_lr 1e-2 --grad_clip 1.0
     --record_dir "$MOLROOT/$name"
+    ${seed_arg[@]+"${seed_arg[@]}"}
     "$@")
 
   if [[ "$DRY" == "1" ]]; then printf '  %q' "${cmd[@]}"; echo; return 0; fi
@@ -123,6 +140,10 @@ if [[ "$SKIP_SANITY" != "1" ]]; then
     say "  grep log_reward_mean $LOGS/rtb-proj-nitrogen-sanity.log | tail -20"
   fi
 fi
+
+# "" is the no-seed case: one pass, names unchanged, --seed not passed.
+for SEED in ${SEEDS:-""}; do
+[[ -n "$SEED" ]] && say "===== training seed ${SEED} ====="
 
 # --------------------------- 1. Osimertinib MPO ------------------------------
 # beta anneals linearly from beta_start to reward_beta over beta_anneal_epochs.
@@ -231,6 +252,8 @@ if [[ "$WHICH" == "all" || "$WHICH" == "peri" ]]; then
     --bsz 12 --steps_per_epoch 100 --max_epochs 10 \
     --lr 5e-6 --trunk_lr_mult 0.1 --logp_grad_frac 0.25
 fi
+
+done   # seed loop
 
 # ------------------------------- summary -------------------------------------
 hr

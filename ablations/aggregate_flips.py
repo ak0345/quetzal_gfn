@@ -23,9 +23,15 @@ import json
 import glob
 import argparse
 
+# The optional -s<N> suffix is a TRAINING seed, and is optional so that names
+# written before seeds were recorded still parse.
+_SEED_SUFFIX = r"(?:-s(?P<train_seed>\d+))?$"
+
 NAME_RE_SWEEP = re.compile(
-    r"^sweep-(?P<reward>[^-]+)-(?P<guide>[^-]+)-(?P<objective>[^-]+)-replay_(?P<replay>on|off)-b(?P<beta>\d+)$")
-NAME_RE_STAB = re.compile(r"^stability-geom-(?P<guide>[^-]+)-db-b(?P<beta>\d+)$")
+    r"^sweep-(?P<reward>[^-]+)-(?P<guide>[^-]+)-(?P<objective>[^-]+)-replay_(?P<replay>on|off)-b(?P<beta>\d+)"
+    + _SEED_SUFFIX)
+NAME_RE_STAB = re.compile(
+    r"^stability-geom-(?P<guide>[^-]+)-db-b(?P<beta>\d+)" + _SEED_SUFFIX)
 
 
 def parse_name(name):

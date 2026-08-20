@@ -29,8 +29,6 @@ configuration tested.
 - [Downloads](#downloads)
 - [Running the experiments](#running-the-experiments)
 - [Configuration reference](#configuration-reference)
-- [Where the numbers come from](#where-the-numbers-come-from)
-- [Known issues and excluded runs](#known-issues-and-excluded-runs)
 - [Pretraining the prior](#pretraining-the-prior)
 - [Citation](#citation)
 
@@ -125,11 +123,11 @@ wget -O checkpoints/geom.ckpt \
 All checkpoints produced by this work — every guide from the sweep, the
 per-component guides, and every fine-tuning scope — live in one repository:
 
-> **Weights:** `<PASTE HUGGING FACE LINK FOR ALL WEIGHTS HERE>`
+> **Weights:** [LINK](https://huggingface.co/ak0345/quetzal_gfn)
 
 ```bash
 # expected layout: logs/quetzal-gfn/<run name>/checkpoints/last.ckpt
-huggingface-cli download <REPO_ID> --local-dir logs/quetzal-gfn
+hf download ak0345/quetzal_gfn --local-dir logs/quetzal-gfn
 ```
 
 Set `CKPT_ROOT` if you put them somewhere else.
@@ -143,11 +141,11 @@ different tools.
 `rtb_finetune.py` run, in generation order, with its oracle-call index. This is
 what `harvest_eval.py` slices at a budget.
 
-> **Fine-tuning molecules:** `<PASTE HUGGING FACE LINK FOR FINE-TUNING MOLECULES HERE>`
+> **Fine-tuning molecules:** [LINK](https://huggingface.co/datasets/ak0345/quetzal_rtb_ft_mols)
 
 ```bash
 # expected layout: results/oracle_gfn_mols/<run name>/molecules.jsonl
-huggingface-cli download <REPO_ID> --repo-type dataset \
+hf download ak0345/quetzal_rtb_ft_mols --repo-type dataset \
   --local-dir results/oracle_gfn_mols
 ```
 
@@ -155,11 +153,11 @@ huggingface-cli download <REPO_ID> --repo-type dataset \
 the full metric suite, as produced by `final_dump.py`. This is what
 `aggregate_dumps.py` builds the master table from.
 
-> **Guide molecules:** `<PASTE HUGGING FACE LINK FOR GUIDE MOLECULES HERE>`
+> **Guide molecules:** [LINK](https://huggingface.co/datasets/ak0345/quetzal_gfn_mols)
 
 ```bash
 # expected layout: results/dumps/<run name>/seed<k>/dump_summary.json
-huggingface-cli download <REPO_ID> --repo-type dataset \
+hf download ak0345/quetzal_gfn_mols --repo-type dataset \
   --local-dir results/dumps
 ```
 
@@ -256,6 +254,45 @@ per-objective and per-component reward histograms. No GPU training.
 Each concurrent training holds its own copy of the frozen prior in VRAM, so
 raising `MAX_PARALLEL` past what the GPU fits will OOM rather than run faster.
 
+### Seeds
+
+There are **two independent seed axes**, and they measure different things.
+
+| | Flag | Varies | Set by |
+|---|---|---|---|
+| **Training seed** | `gflow.py --seed`, `rtb_finetune.py --seed` | guide/adapter initialisation, rollout sampling, the replay buffer | `SEEDS` in stages 1 and 3 |
+| **Dump seed** | `final_dump.py --seed` | which molecules are sampled from an *already-trained* checkpoint | `SEEDS` in stage 4 |
+
+Training seeds are opt-in. Left unset, stages 1 and 3 run one job per
+configuration with names exactly as before. Set them and each configuration is
+trained once per seed, with `--seed` passed and a `-s<N>` suffix appended to the
+run name so runs neither collide nor resume into each other:
+
+```bash
+SEEDS="0 42 100" bash scripts/01_train_guides.sh
+SEEDS="0 42 100" bash scripts/03_finetune.sh
+```
+
+The aggregators read that suffix back as a `train_seed` column and also emit
+`base_name` (the name with the suffix stripped), so `master_table.csv` gives one
+row per (configuration, training seed) — mean and standard deviation over that
+run's dump seeds — and you can group by `base_name` to pool across training
+seeds. The suffix is optional in the name regexes, so runs recorded before seeds
+existed still parse, with `train_seed` empty.
+
+**The results in the paper use dump seeds only.** The "three seeds (0, 42, 100)"
+of Table 6 are three samples of 5,000 molecules drawn from one trained
+checkpoint per configuration; every `seed0/`, `seed42/` and `seed100/` directory
+under `results/dumps/<run>/` records the same `last.ckpt`. Those error bars are
+therefore sampling variance and exclude training variance entirely, and the
+limitation that fine-tuning margins are "of the same order as the seed variance
+in the guide sweep" compares against that quantity rather than run-to-run
+spread. Re-running stage 1 with `SEEDS` set is what measures the latter.
+
+Because nothing was seeded before, the released checkpoints were each trained
+under an uncontrolled seed and cannot be reproduced exactly; runs from here on
+can be.
+
 ---
 
 ## Configuration reference
@@ -320,92 +357,6 @@ argument under policy and prior, so every term of the coordinate log-ratio is
 identically zero. Under `atom` and `full` the trunk drifts and the atom-only
 ratio incurs a bias; `diag/zprefix_drift` logs its size so the violation is
 measured rather than assumed.
-
----
-
-## Where the numbers come from
-
-| Paper item | Produced by |
-|---|---|
-| Fig. 1 — configurations vs dataset baseline | stage 8 `harvest` + stage 4 aggregate |
-| Fig. 2 — flip rate by sequence position | stage 6 → `_aggs/flip_by_position_t1.0_by_guide.csv` |
-| Fig. 3 — score vs trainable capacity | stage 8 `harvest`, `_results/*.csv` |
-| Fig. 5 — flip rate by logit margin | stage 7 `ceiling` |
-| Fig. 7 — residual scale sweep | stage 7 `guide` |
-| Fig. 8 — learned temperature | stage 7 `tempgain` |
-| Fig. 9 — component effects, composition weights | stage 7 `singles` |
-| Fig. 11 — distribution health during training | stage 8 `harvest --extended` |
-| Fig. 12 — per-component MPO scores | stage 8 `hists` |
-| Table 6 — guide sweep | stage 4 → `results/dumps/_aggregate/master_table.csv` |
-| Table 7 — flip diagnostics | stage 6 → `_aggs/flip_table_t1.0_by_guide.csv` |
-| Table 8 — fine-tuning at matched budget | stage 8 `harvest` |
-| Table 10 — nitrogen control | stage 4, `REWARDS=nitrogen` |
-| GEOM best-of-10k baseline | stage 8 `baseline` |
-
-### Metric conventions
-
-Guides and the dataset are post-hoc i.i.d. samples with no oracle-call order, so
-they are reported as **final top-10**. Fine-tuned runs record generation order
-and are reported as **AUC top-10 over 10,000 calls**. Since top-k is
-non-decreasing in n, AUC top-10 ≤ top-10, so that axis slightly favours the
-guides — as does their smaller sample (N=5,000 against N=10,000). `harvest_eval.py`
-emits both an unbounded (GuacaMol leaderboard parity) and a budgeted (PMO)
-number for this reason.
-
-The dataset baseline is applied at the same budget: the best of 10,000 molecules
-drawn from GEOM-Drugs. It is defined in the original GuacaMol benchmark but
-often omitted, and without it a reported score is difficult to distinguish from
-what a virtual screen would produce.
-
----
-
-## Known issues and excluded runs
-
-**The temperature mechanism was inactive.** The `tempgain` runs reported in the
-paper used `T = 1 + (softplus(raw) − ln 2)`, which spans (0.307, ∞) and does not
-enforce `T ≥ 1`; the floor came from `clamp(T, min=1)` in the forward pass, which
-has zero gradient below its threshold. The learned `T` read off every trained
-checkpoint sits between 0.73 and 0.80 and is flat in the margin — a head stuck
-in the clamp's dead zone. The effective temperature was 1 at every state, so
-`TEMPGAIN` runs report a **gain-scaled residual guide**, not a test of prior
-softening. No conclusion rests on it; prior softening remains untested.
-`tempgain_guide.py` now parameterises `T` in log space, which is bidirectional
-and differentiable throughout, but **old checkpoints are not loadable into it**
-(the same weights mean a different `T`) — see `migrate_note()`.
-
-**Composition flow-route runs are excluded.** A set of composed-guide runs
-sampled through a flow-based routing path in which the residual was computed but
-never applied to the logits. Their rollout diagnostics show `‖g(h)‖ = 0.000`
-exactly at every state and a flip rate identically zero at every position. That
-is a delivery failure, not a bound, and is distinguishable only because stage 6
-measures delivery separately from the flip rate. Use `--route policy`.
-
-**Atom-stability runs are excluded as uninformative.** Molecular stability sits
-below 0.05 throughout, which is expected rather than anomalous: for 80–100
-heavy-atom molecules even a per-atom stability of 0.95 gives 0.95^80 ≈ 0.017.
-The objective is near-saturated under the prior and offers little gradient.
-
-**The `FULL` fine-tuning run is under budget.** Compute limits forced a batch
-size of 8 against 64 elsewhere, so at the same step count it reached 4,800 oracle
-calls rather than 38,400. Since top-k grows with the number of calls, it is not
-comparable on a capacity axis and is excluded from Fig. 3, though reported in
-Table 8.
-
-**Component 1 of the Osimertinib objective is a dead axis.** ECFP6 similarity has
-zero variance over reachable molecules, so a guide trained against it receives no
-gradient and its curve is flat by construction. `COMPONENTS` defaults to the
-three live axes. Stage 7's `ceiling` section is what identifies this.
-
-**Unresolved: the `atom`-scope run labels.** The recorded `meta.json` for
-`rtb-atom-osim-b10` and `rtb-atom-peri-b10` says `finetune_scope=full`, while
-the run names and Table 8 (43.1M trainable parameters) both say `atom`.
-`scripts/03_finetune.sh` uses `atom`, matching the name and the reported
-parameter count. If the recorded value is the accurate one, those two rows
-belong with `FULL` and the capacity axis needs re-running. Resolve before citing
-them as `ATOM`.
-
-**Fine-tuning runs are single-seed**, with margins of the same order as the seed
-variance observed in the guide sweep (seeds 0, 42, 100).
 
 ---
 

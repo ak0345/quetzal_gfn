@@ -4,6 +4,7 @@
 #
 # Trains a small guide on top of the frozen Quetzal prior across four axes:
 #
+#   seed      : training seed (opt-in, see below)
 #   guide     : hidden | tempgain | base       (where the residual is injected)
 #   objective : db | rtb | revkl | fwdkl       (what it is trained to minimise)
 #   replay    : on | off                       (db/rtb only; the KL branches
@@ -19,8 +20,20 @@
 # The full cross product (minus the invalid replay+KL combinations) is 288 runs.
 # SUBSET=1 (the default) runs the reduced grid the paper reports.
 #
+# SEEDS is opt-in and empty by default, which trains one run per configuration
+# under whatever the dataclass default is, with names exactly as before. Setting
+# it trains one run per (configuration, seed), passing --seed and appending a
+# -s<N> suffix to the run name so the runs neither collide nor resume into each
+# other. The aggregators read that suffix back as a `train_seed` column.
+#
+# This is a different axis from the dump seeds in stage 4: those resample
+# molecules from ONE trained checkpoint, and give sampling variance. Only SEEDS
+# here gives variance across independently trained guides. Error bars over dump
+# seeds alone understate run-to-run spread.
+#
 # Usage:
 #   bash scripts/01_train_guides.sh
+#   SEEDS="0 42 100" bash scripts/01_train_guides.sh  # three training seeds
 #   SUBSET=0 bash scripts/01_train_guides.sh          # the entire matrix
 #   REWARDS="nitrogen" bash scripts/01_train_guides.sh
 #   MAX_PARALLEL=3 bash scripts/01_train_guides.sh    # 3 at a time on one GPU
@@ -31,6 +44,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 require_prior
 
 SUBSET="${SUBSET:-1}"
+SEEDS="${SEEDS:-}"          # empty -> one unsuffixed run per configuration
 MAX_EPOCHS="${MAX_EPOCHS:-5}"
 STEPS="${STEPS:-100}"
 LOGDIR="${LOGDIR:-${LOG_ROOT}/guides}"
@@ -110,42 +124,51 @@ for reward in "${REWARDS[@]}"; do
           continue
         fi
         for beta in "${BETAS[@]}"; do
-          COUNT=$((COUNT+1))
-          NAME="sweep-${reward}-${guide}-${obj}-replay_${replay}-b${beta}"
+          # "" is the no-seed case: one run, name unchanged, --seed not passed
+          for seed in ${SEEDS:-""}; do
+            COUNT=$((COUNT+1))
+            NAME="sweep-${reward}-${guide}-${obj}-replay_${replay}-b${beta}"
+            SEED_ARG=""
+            if [[ -n "$seed" ]]; then
+              NAME="${NAME}-s${seed}"
+              SEED_ARG="--seed ${seed}"
+            fi
 
-          if compgen -G "${CKPT_ROOT}/${NAME}/checkpoints/*.ckpt" > /dev/null; then
-            echo "[skip $COUNT] $NAME (checkpoint exists)"
-            SKIPPED=$((SKIPPED+1)); continue
-          fi
+            if compgen -G "${CKPT_ROOT}/${NAME}/checkpoints/*.ckpt" > /dev/null; then
+              echo "[skip $COUNT] $NAME (checkpoint exists)"
+              SKIPPED=$((SKIPPED+1)); continue
+            fi
 
-          CMD="$PY gflow.py \
-            --name ${NAME} \
-            --quetzal_ckpt ${QUETZAL_CKPT} \
-            --objective ${obj} \
-            --reward_beta ${beta} \
-            $(reward_flags "$reward") \
-            $(guide_flags "$guide") \
-            $(replay_flags "$replay") \
-            --max_epochs ${MAX_EPOCHS} \
-            --steps_per_epoch ${STEPS} \
-            --eval_n 0 \
-            --final_n 0 \
-            --hist_every_n_epochs 0 \
-            --no_fcd_enabled \
-            --no_eval_base"
+            CMD="$PY gflow.py \
+              --name ${NAME} \
+              --quetzal_ckpt ${QUETZAL_CKPT} \
+              --objective ${obj} \
+              --reward_beta ${beta} \
+              ${SEED_ARG} \
+              $(reward_flags "$reward") \
+              $(guide_flags "$guide") \
+              $(replay_flags "$replay") \
+              --max_epochs ${MAX_EPOCHS} \
+              --steps_per_epoch ${STEPS} \
+              --eval_n 0 \
+              --final_n 0 \
+              --hist_every_n_epochs 0 \
+              --no_fcd_enabled \
+              --no_eval_base"
 
-          hr; echo "[run $COUNT] $NAME"; echo "$CMD"; hr
-          [[ "$DRY" == "1" ]] && continue
+            hr; echo "[run $COUNT] $NAME"; echo "$CMD"; hr
+            [[ "$DRY" == "1" ]] && continue
 
-          throttle
-          (
-            eval "$CMD" > "${LOGDIR}/${NAME}.log" 2>&1
-            RC=$?
-            [[ $RC -ne 0 ]] && echo "[warn] $NAME exited $RC (see ${LOGDIR}/${NAME}.log)"
-          ) &
-          echo "[launch $COUNT] $NAME (pid $!, active=$(( $(jobs -r -p | wc -l) )))"
-          RAN=$((RAN+1))
-          sleep 2   # stagger so parallel runs don't grab VRAM in lockstep
+            throttle
+            (
+              eval "$CMD" > "${LOGDIR}/${NAME}.log" 2>&1
+              RC=$?
+              [[ $RC -ne 0 ]] && echo "[warn] $NAME exited $RC (see ${LOGDIR}/${NAME}.log)"
+            ) &
+            echo "[launch $COUNT] $NAME (pid $!, active=$(( $(jobs -r -p | wc -l) )))"
+            RAN=$((RAN+1))
+            sleep 2   # stagger so parallel runs don't grab VRAM in lockstep
+          done
         done
       done
     done

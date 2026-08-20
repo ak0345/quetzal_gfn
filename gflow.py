@@ -170,6 +170,12 @@ class GFNConfig:
     name: str = "gfn-geom-peri-comp0--db-beta20"
     devices: int = 1
     num_nodes: int = 1
+    # Training seed. Seeds guide initialisation (the hidden layers are random
+    # even though the output layer is zero-init), rollout sampling, and the
+    # replay buffer, so two runs differing only in `seed` are independent draws
+    # of the same configuration. Distinct from final_dump.py's --seed, which
+    # only reseeds sampling from an already-trained checkpoint.
+    seed: int = 0
     debug: bool = False
     resume_path: str = None
     # Load a bare LogitGuide checkpoint's residual weights into a fresh
@@ -1249,6 +1255,9 @@ def parse_args():
 
 if __name__ == "__main__":
     cfg = parse_args()
+    # before the module is built: the guide's hidden layers are randomly
+    # initialised, so seeding after construction would leave them uncontrolled
+    L.seed_everything(cfg.seed, workers=True)
     lit = LitGFlowNet(asdict(cfg))
 
     @rank_zero_only

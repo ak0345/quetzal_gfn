@@ -39,25 +39,34 @@ import argparse
 from collections import defaultdict
 
 # sweep-fexo-base-db-replay_on-b10  /  rtb-osim-hidden-db-replay_off-b1
+# The optional -s<N> suffix is a TRAINING seed, and is optional so that names
+# written before seeds were recorded still parse.
+_SEED_SUFFIX = r"(?:-s(?P<train_seed>\d+))?$"
+
 NAME_RE_SWEEP = re.compile(
     r"^(?:sweep|rtb)-(?P<reward>[^-]+)-(?P<guide>[^-]+)-(?P<objective>[^-]+)"
-    r"-replay_(?P<replay>on|off)-b(?P<beta>\d+)$")
-NAME_RE_STAB = re.compile(r"^stability-geom-(?P<guide>[^-]+)-db-b(?P<beta>\d+)$")
+    r"-replay_(?P<replay>on|off)-b(?P<beta>\d+)" + _SEED_SUFFIX)
+NAME_RE_STAB = re.compile(
+    r"^stability-geom-(?P<guide>[^-]+)-db-b(?P<beta>\d+)" + _SEED_SUFFIX)
 
 
 def parse_name(name):
     m = NAME_RE_SWEEP.match(name)
     if m:
         d = m.groupdict(); d["beta"] = int(d["beta"])
+        ts = d.get("train_seed")
+        d["train_seed"] = int(ts) if ts is not None else None
         d["family"] = "rtb" if name.startswith("rtb") else "sweep"
         return d
     m = NAME_RE_STAB.match(name)
     if m:
+        ts = m.groupdict().get("train_seed")
         return {"reward": "atom_stability", "guide": m.group("guide"),
                 "objective": "db", "replay": "off", "beta": int(m.group("beta")),
+                "train_seed": int(ts) if ts is not None else None,
                 "family": "stability"}
     return {"reward": "?", "guide": "?", "objective": "?", "replay": "?",
-            "beta": -1, "family": "?"}
+            "beta": -1, "train_seed": None, "family": "?"}
 
 
 METRICS = ["delivered_frac", "argmax_flip_rate", "sample_flip_rate",

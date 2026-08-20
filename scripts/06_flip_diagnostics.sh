@@ -53,7 +53,9 @@ SKIP_EXISTING="${SKIP_EXISTING:-1}"
 [[ -f "$PROBE" ]] || { echo "[fatal] $PROBE not found" >&2; exit 2; }
 [[ -d "$CKPT_ROOT" ]] || { echo "[fatal] $CKPT_ROOT is not a directory" >&2; exit 2; }
 
-# extra flags after -- are forwarded verbatim to the probe
+# Extra flags after -- are forwarded verbatim to the probe. Expansions below use
+# the +"${a[@]}" guard because bash 3.2 treats expanding an empty array under
+# `set -u` as an unbound variable.
 EXTRA=()
 if [[ "${1:-}" == "--" ]]; then shift; EXTRA=( "$@" ); fi
 [[ -n "${N_REPORT_POS:-}" ]] && EXTRA+=( --n_report_pos "$N_REPORT_POS" )
@@ -123,7 +125,7 @@ for i in "${!CKPTS[@]}"; do
   # keep going: one broken checkpoint should not abort the sweep
   if "$PY" "$PROBE" \
         --ckpt "$ckpt" --label "$label" --report_tag "$safe" \
-        --out_dir "$OUT_DIR" "${TEMP_ARGS[@]}" "${EXTRA[@]}" \
+        --out_dir "$OUT_DIR" "${TEMP_ARGS[@]}" ${EXTRA[@]+"${EXTRA[@]}"} \
         > "$LOG_DIR/${safe}.log" 2>&1; then
     echo "[ ok ] $label -> $json"; OK=$((OK+1))
   else
