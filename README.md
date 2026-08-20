@@ -280,19 +280,6 @@ run's dump seeds — and you can group by `base_name` to pool across training
 seeds. The suffix is optional in the name regexes, so runs recorded before seeds
 existed still parse, with `train_seed` empty.
 
-**The results in the paper use dump seeds only.** The "three seeds (0, 42, 100)"
-of Table 6 are three samples of 5,000 molecules drawn from one trained
-checkpoint per configuration; every `seed0/`, `seed42/` and `seed100/` directory
-under `results/dumps/<run>/` records the same `last.ckpt`. Those error bars are
-therefore sampling variance and exclude training variance entirely, and the
-limitation that fine-tuning margins are "of the same order as the seed variance
-in the guide sweep" compares against that quantity rather than run-to-run
-spread. Re-running stage 1 with `SEEDS` set is what measures the latter.
-
-Because nothing was seeded before, the released checkpoints were each trained
-under an uncontrolled seed and cannot be reproduced exactly; runs from here on
-can be.
-
 ---
 
 ## Configuration reference
