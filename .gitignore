@@ -15,9 +15,10 @@ wandb/
 runlogs_guac/
 *_logs/
 
-# Generated samples and figures not committed as results
+# Generated samples. The figure SCRIPTS in figures/ are tracked; only their
+# rendered output is not.
 samples/
-figures/
+figures/out/
 
 # Scratch
 trash/

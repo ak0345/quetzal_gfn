@@ -97,6 +97,18 @@ def _label_for(ckpt_path):
     return os.path.splitext(os.path.basename(ckpt_path))[0]
 
 
+def _pos_mean(sum_by_pos, state_by_pos, n_report=N_REPORT_POS):
+    """Per-position mean of a summed quantity, None where no state was reached.
+
+    Same null convention as _pos_rates: a position no trajectory ever reached
+    is absent, not zero.
+    """
+    n = int(min(n_report, len(sum_by_pos)))
+    sums = np.asarray(sum_by_pos, dtype=float)[:n]
+    states = np.asarray(state_by_pos, dtype=float)[:n]
+    return [None if s <= 0 else float(v / s) for v, s in zip(sums, states)]
+
+
 def _pos_rates(flip_by_pos, state_by_pos, n_report=N_REPORT_POS):
     """flips/states per position, safe against positions with zero states.
 
@@ -146,6 +158,7 @@ def flip_diagnostics(lit, guide, n_traj=400, max_steps=None, temp=1.0,
     acc = {"delivered": 0, "n_states": 0, "argmax_flip": 0, "sample_flip": 0,
            "mass_moved_sum": 0.0, "kl_sum": 0.0, "prior_top1_logit_gap_sum": 0.0,
            "flip_by_pos": np.zeros(max_steps), "state_by_pos": np.zeros(max_steps),
+           "gap_by_pos": np.zeros(max_steps),
            "gap_flip_hi": 0, "gap_flip_hi_flipped": 0,   # flips on gap>8 (hard) states
            "gap_lo": 0, "gap_lo_flipped": 0}             # flips on gap<=8 (easy) states
 
@@ -210,6 +223,10 @@ def flip_diagnostics(lit, guide, n_traj=400, max_steps=None, temp=1.0,
             # molecule simply keep a zero denominator and report as null.
             acc["flip_by_pos"][t] += (sample_flip & a).sum().item()
             acc["state_by_pos"][t] += na
+            # the prior's margin at this position, summed so it can be divided
+            # by state_by_pos later. Figure 2 plots the flip decay against this
+            # on a twin axis, and the decay is only interpretable next to it.
+            acc["gap_by_pos"][t] += (gap * a.float()).sum().item()
 
             # advance the PRIOR trajectory (the shared baseline path)
             atoms = torch.cat([atoms, next_prior.unsqueeze(1)], dim=1)
@@ -242,6 +259,8 @@ def flip_diagnostics(lit, guide, n_traj=400, max_steps=None, temp=1.0,
         # null at positions no trajectory ever reached
         "flip_rate_by_position": pos_rate,
         "states_by_position": pos_states,
+        "mean_gap_by_position": _pos_mean(acc["gap_by_pos"], acc["state_by_pos"],
+                                          n_report),
         "n_positions_reported": len(pos_rate),
         "deepest_position_reached": (reached[-1] + 1) if reached else 0,
         "max_steps": int(max_steps),
@@ -264,6 +283,7 @@ def flip_diagnostics(lit, guide, n_traj=400, max_steps=None, temp=1.0,
             "gap_lo_flipped": int(acc["gap_lo_flipped"]),
             "flip_by_position": [int(x) for x in acc["flip_by_pos"]],
             "state_by_position": [int(x) for x in acc["state_by_pos"]],
+            "gap_sum_by_position": [float(x) for x in acc["gap_by_pos"]],
         },
     }
 
