@@ -66,3 +66,52 @@ the inclusion rule and filter explicitly.
 
 **Figures 5, 7, 8 and 9 have no data yet.** Stage 7 has not been run in the
 current layout. Each script names the section that produces it.
+
+## Producing the four missing figures from existing weights
+
+These need checkpoints, not dumps. Download the weights, then point stage 7 at
+whichever runs you have:
+
+```bash
+hf download ak0345/quetzal_gfn --local-dir logs/quetzal-gfn
+ls logs/quetzal-gfn | head          # confirm the layout
+```
+
+The recorded checkpoint paths in the flip reports read
+`logs/quetzal-gfn/legit/<run>/checkpoints/`, so if the download reproduces that
+nesting, set `CKPT_ROOT=logs/quetzal-gfn/legit`.
+
+```bash
+OSIM="sweep-osim-hidden-db-replay_off-b10 sweep-osim-base-db-replay_off-b10 sweep-osim-tempgain-db-replay_off-b10"
+
+RUNS="$OSIM" bash scripts/07_ablations.sh ceiling    # Figure 5
+RUNS="$OSIM" bash scripts/07_ablations.sh guide      # Figure 7
+RUNS="$OSIM" bash scripts/07_ablations.sh tempgain   # Figure 8
+bash scripts/07_ablations.sh singles                 # Figure 9 -- components only
+bash figures/make_all.sh
+```
+
+Two constraints worth knowing before you run them:
+
+**Figure 8 needs guides that have temperature heads.** `probe_tempgain.py` reads
+T(h) and g(h) off the checkpoint; a hidden or base guide has neither and comes
+back as `note: guide has no temp/gain heads`. Use `sweep-*-tempgain-*` runs,
+which the flip reports confirm are `TempGainGuide`.
+
+**Figure 9 needs the per-component guides**, not the sweep. "Each component alone"
+and "composition weights" are only defined over a set of component teachers, so
+`RUNS=` will not substitute here — it needs `compose-osim-c{0,2,3}-*` from stage 2,
+or whatever the equivalents are called in your checkpoint set (set `RUN_PREFIX`
+and `RUN_SUFFIX`).
+
+**Figure 10 is the excluded flow-route run.** It has no default input because the
+flow route is not part of the pipeline. Produce a flow-route flip report and pass
+it explicitly:
+
+```bash
+ROUTE=flow OUT_ROOT=results/ablations/flow RUNS="$OSIM" \
+  bash scripts/07_ablations.sh flip
+python figures/make_fig10_excluded_flow.py \
+  --report results/ablations/flow/flip-t1.0/flip_report.json \
+  --out figures/out/fig10.pdf
+```
