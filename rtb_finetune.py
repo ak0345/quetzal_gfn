@@ -130,6 +130,11 @@ class FTConfig:
     name: str = "ft-proj-osim-b10"
     devices: int = 1
     num_nodes: int = 1
+    # Training seed. Seeds LoRA's A-matrix initialisation, rollout sampling and
+    # the log-probability subsampling mask, so two runs differing only in `seed`
+    # are independent draws of the same configuration. Distinct from
+    # final_dump.py's --seed, which only reseeds sampling from a trained model.
+    seed: int = 0
     debug: bool = False
     resume_path: str = None
 
@@ -882,6 +887,8 @@ def parse_args():
 
 if __name__ == "__main__":
     cfg = parse_args()
+    # before the module is built, so adapter initialisation is covered too
+    L.seed_everything(cfg.seed, workers=True)
 
     ckpt_dir = f"logs/quetzal-ft/{cfg.name}/checkpoints"
     os.makedirs(ckpt_dir, exist_ok=True)

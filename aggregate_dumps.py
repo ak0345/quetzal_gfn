@@ -30,13 +30,33 @@ from collections import defaultdict
 import numpy as np
 
 
+# A run name may carry an optional -s<N> training-seed suffix. It is optional so
+# that names written before seeds were recorded still parse, in which case
+# train_seed comes back None. This is NOT the dump seed: a single trained
+# checkpoint is sampled at several dump seeds, and both vary independently.
+_SEED_SUFFIX = r"(?:-s(?P<train_seed>\d+))?$"
+
 NAME_RE_SWEEP = re.compile(
-    r"^sweep-(?P<reward>[^-]+)-(?P<guide>[^-]+)-(?P<objective>[^-]+)-replay_(?P<replay>on|off)-b(?P<beta>\d+)$")
+    r"^sweep-(?P<reward>[^-]+)-(?P<guide>[^-]+)-(?P<objective>[^-]+)-replay_(?P<replay>on|off)-b(?P<beta>\d+)"
+    + _SEED_SUFFIX)
 NAME_RE_STAB = re.compile(
-    r"^stability-geom-(?P<guide>[^-]+)-db-b(?P<beta>\d+)$")
+    r"^stability-geom-(?P<guide>[^-]+)-db-b(?P<beta>\d+)" + _SEED_SUFFIX)
 # compose-<benchkey>-<operator>-k<K>-b<beta>
 NAME_RE_COMPOSE = re.compile(
-    r"^compose-(?P<bench>[^-]+)-(?P<operator>[^-]+)-k(?P<k>\d+)-b(?P<beta>\d+)$")
+    r"^compose-(?P<bench>[^-]+)-(?P<operator>[^-]+)-k(?P<k>\d+)-b(?P<beta>\d+)"
+    + _SEED_SUFFIX)
+
+
+def _seed_of(m):
+    """The -s<N> suffix as an int, or None when the name carries no seed."""
+    v = m.groupdict().get("train_seed")
+    return int(v) if v is not None else None
+
+
+def base_name(name):
+    """The run name with any -s<N> training-seed suffix removed, so rows for the
+    same configuration at different training seeds can be grouped together."""
+    return re.sub(r"-s\d+$", "", name)
 
 
 def parse_name(name):
@@ -44,23 +64,25 @@ def parse_name(name):
     if m:
         d = m.groupdict()
         d["beta"] = int(d["beta"])
+        d["train_seed"] = _seed_of(m)
         d["family"] = "sweep"
         return d
     m = NAME_RE_STAB.match(name)
     if m:
         return {"reward": "atom_stability", "guide": m.group("guide"),
                 "objective": "db", "replay": "off", "beta": int(m.group("beta")),
-                "family": "stability"}
+                "train_seed": _seed_of(m), "family": "stability"}
     m = NAME_RE_COMPOSE.match(name)
     if m:
         # guide axis carries the operator (linear/product/harmonic); reward is the
         # benchmark being composed toward; objective='compose', replay='off'.
         return {"reward": m.group("bench"), "guide": m.group("operator"),
                 "objective": "compose", "replay": "off",
-                "beta": int(m.group("beta")), "family": "compose",
+                "beta": int(m.group("beta")), "train_seed": _seed_of(m),
+                "family": "compose",
                 "n_components": int(m.group("k"))}
     return {"reward": "?", "guide": "?", "objective": "?", "replay": "?",
-            "beta": -1, "family": "?"}
+            "beta": -1, "train_seed": None, "family": "?"}
 
 
 # flat metrics pulled from each summary (guided/base nested + top-level)
@@ -226,7 +248,10 @@ def main():
         if name.startswith("_"):
             continue
         seed = summary.get("seed")
-        row = {"name": name, "seed": seed}
+        # `seed` is the DUMP seed (which molecules were sampled from a trained
+        # checkpoint); `train_seed`, parsed from the name, is the TRAINING seed.
+        # They vary independently, so both are carried through.
+        row = {"name": name, "seed": seed, "base_name": base_name(name)}
         row.update(parse_name(name))
         row.update(flatten(summary, dump_dir=os.path.dirname(path)))
         # note whether this row's base came from a reused _base dump
@@ -244,7 +269,8 @@ def main():
 
     # ---- long csv ----
     all_keys = sorted({k for r in rows for k in r})
-    front = ["name", "seed", "family", "reward", "guide", "objective", "replay", "beta"]
+    front = ["name", "base_name", "train_seed", "seed", "family", "reward",
+             "guide", "objective", "replay", "beta"]
     cols = front + [k for k in all_keys if k not in front]
     long_path = os.path.join(args.out_dir, "master_long.csv")
     with open(long_path, "w", newline="") as f:
@@ -262,7 +288,11 @@ def main():
     numeric_keys = [k for k in cols if k not in front + ["seed"]]
     agg_rows = []
     for name, rs in sorted(by_name.items()):
-        base = {k: rs[0].get(k) for k in ("name", "family", "reward", "guide",
+        # One row per (configuration, training seed), with mean/std taken over
+        # that run's DUMP seeds. Group by base_name downstream to pool across
+        # training seeds -- the two variances are not interchangeable.
+        base = {k: rs[0].get(k) for k in ("name", "base_name", "train_seed",
+                                          "family", "reward", "guide",
                                           "objective", "replay", "beta")}
         base["n_seeds"] = len(rs)
         for k in numeric_keys:
@@ -275,8 +305,8 @@ def main():
                 base[f"{k}_std"] = None
         agg_rows.append(base)
 
-    agg_cols = (["name", "family", "reward", "guide", "objective", "replay",
-                 "beta", "n_seeds"]
+    agg_cols = (["name", "base_name", "train_seed", "family", "reward", "guide",
+                 "objective", "replay", "beta", "n_seeds"]
                 + [f"{k}_{s}" for k in numeric_keys for s in ("mean", "std")])
     master_path = os.path.join(args.out_dir, "master_table.csv")
     with open(master_path, "w", newline="") as f:
