@@ -52,8 +52,8 @@ WHICH="${1:-all}"
 [[ "$WHICH" != "all" ]] && REWARDS="$WHICH"
 
 MOLROOT="${MOLROOT:-${RESULTS_ROOT}/oracle_gfn_mols}"
-SEEDS="${SEEDS:-}"          # empty -> one unsuffixed run per configuration
-REWARDS="${REWARDS:-osim peri zaleplon}"
+SEEDS="${SEEDS:-42}"          # empty -> one unsuffixed run per configuration
+REWARDS="${REWARDS:-zaleplon}"
 LORA_RANKS="${LORA_RANKS:-4 16 64}"
 BETA="${BETA:-10}"
 BETA_START="${BETA_START:-2}"
@@ -61,7 +61,7 @@ BETA_START="${BETA_START:-2}"
 # ~10,000 molecules per configuration, which is the harvest budget
 BSZ="${BSZ:-64}";        STEPS_SMALL="${STEPS_SMALL:-40}";  EPOCHS_SMALL="${EPOCHS_SMALL:-4}"
 BSZ_FULL="${BSZ_FULL:-12}"; STEPS_FULL="${STEPS_FULL:-140}"; EPOCHS_FULL="${EPOCHS_FULL:-6}"
-SKIP_SANITY="${SKIP_SANITY:-0}"
+SKIP_SANITY="${SKIP_SANITY:-1}"
 ONLY="${ONLY:-}"
 DEVICE="${DEVICE:-0}"
 export CUDA_VISIBLE_DEVICES="$DEVICE"

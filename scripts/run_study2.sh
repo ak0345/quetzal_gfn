@@ -72,7 +72,7 @@
 #   STAGES="4 8" bash scripts/run_study.sh       # re-score without retraining
 #   STAGES=3 bash scripts/run_study.sh           # only the fine-tunes
 #
-#   nohup bash scripts/run_study.sh > study.log 2>&1 &
+#   nohup bash scripts/run_study2.sh > study2.log 2>&1 &
 # =============================================================================
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -80,7 +80,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ------------------------------ the study grid -------------------------------
 # Exported so the stage scripts and everything they call see the same values.
 export SEEDS="${SEEDS:-0 42}"
-export REWARDS="${REWARDS:-osim peri}"
+export REWARDS="${REWARDS:-nitrogen fexo}"
 export GUIDES="${GUIDES:-hidden base}"
 export OBJECTIVES="${OBJECTIVES:-db rtb}"
 export REPLAYS="${REPLAYS:-on off}"
@@ -90,7 +90,7 @@ export STEPS="${STEPS:-100}"
 export BSZ="${BSZ:-128}"
 
 # the fine-tune half uses its own reward list, which has no nitrogen benchmark
-export FT_REWARDS="${FT_REWARDS:-osim peri}"
+export FT_REWARDS="${FT_REWARDS:-fexo}"
 
 export GUARD_STALL_MINUTES="${GUARD_STALL_MINUTES:-10}"
 export GUARD_REWARD_TIMEOUT="${GUARD_REWARD_TIMEOUT:-20}"
@@ -173,7 +173,7 @@ for s in $STAGES; do
     # one configuration at a time, and the fine-tune reward list has no nitrogen
     3) run_stage "3 fine-tune" \
          env MAX_PARALLEL=1 REWARDS="$FT_REWARDS" bash "$HERE/03_finetune.sh" ;;
-    8) for b in hard_osimertinib perindopril_rings zaleplon_with_other_formula; do
+    8) for b in hard_osimertinib perindopril_rings hard_fexofenadine; do
          run_stage "8 harvest ${b}" \
            env MAX_PARALLEL=1 BENCH="$b" bash "$HERE/08_analysis.sh" harvest
        done
