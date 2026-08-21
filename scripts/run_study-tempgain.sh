@@ -80,7 +80,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ------------------------------ the study grid -------------------------------
 # Exported so the stage scripts and everything they call see the same values.
 export SEEDS="${SEEDS:-0 42}"
-export REWARDS="${REWARDS:-peri osim fexo}"
+export REWARDS="${REWARDS:-peri osim fexo nitrogen}"
 export GUIDES="${GUIDES:-tempgain}"
 export OBJECTIVES="${OBJECTIVES:-db rtb}"
 export REPLAYS="${REPLAYS:-on off}"
