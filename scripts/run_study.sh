@@ -21,6 +21,30 @@
 # stage 4 (dumps) and stage 8 (harvest), which is what keeps the training loop
 # from stalling on CPU-side metric work.
 #
+# ORDER AND PARALLELISM
+#   1 guides      GUIDE_PARALLEL concurrent runs (3 by default)
+#   4 dumps       DUMP_PARALLEL concurrent runs (follows GUIDE_PARALLEL)
+#   6 flips       serial, and cheap
+#   7 ablations   serial, cheap, and needs stage 1's checkpoints
+#   3 fine-tune   ONE AT A TIME, and last of the training stages
+#   8 harvest     serial, reads the fine-tune streams so it must follow stage 3
+#
+# STAGES 2 AND 5 ARE NOT IN THE DEFAULT ORDER. Stage 2 trains the per-component
+# guides and stage 5 composes them, and this study trains neither. Stage 7 runs
+# only the sections that work from the sweep checkpoints: the margin binning
+# (Figure 5), the residual-scale sweep (Figure 7) and the rollout diagnostics.
+# Its `singles` section needs the component guides from stage 2 and its
+# `tempgain` section needs temperature heads, which this study excludes, so both
+# are skipped rather than run and left empty.
+#
+#   The guides parallelise because reward evaluation is CPU-serial while
+#   generation is on the GPU, so concurrent processes overlap one run's scoring
+#   with another's sampling. Fine-tuning does not: it holds two copies of the
+#   model plus the autograd graph retained over the rollout, and at batch 128 in
+#   the guide stage the GPU is already the constraint. Stage 3 therefore runs
+#   each configuration synchronously, which is a property of the script rather
+#   than a setting.
+#
 # SUPERVISION
 #   Every training process carries the in-process hang guard set to
 #   GUARD_STALL_MINUTES (10 by default). A run whose batches stop progressing for
@@ -44,8 +68,9 @@
 # USAGE
 #   DRY=1 bash scripts/run_study.sh              # print every command, run none
 #   bash scripts/run_study.sh                    # the whole study
-#   MAX_PARALLEL=3 bash scripts/run_study.sh     # 3 guide runs at a time
+#   GUIDE_PARALLEL=2 bash scripts/run_study.sh   # ease off if VRAM is tight
 #   STAGES="4 8" bash scripts/run_study.sh       # re-score without retraining
+#   STAGES=3 bash scripts/run_study.sh           # only the fine-tunes
 #
 #   nohup bash scripts/run_study.sh > study.log 2>&1 &
 # =============================================================================
@@ -69,12 +94,33 @@ export FT_REWARDS="${FT_REWARDS:-osim peri zaleplon}"
 
 export GUARD_STALL_MINUTES="${GUARD_STALL_MINUTES:-10}"
 export GUARD_REWARD_TIMEOUT="${GUARD_REWARD_TIMEOUT:-20}"
-export MAX_PARALLEL="${MAX_PARALLEL:-1}"
 export NUM_GPUS="${NUM_GPUS:-1}"
 export DRY="${DRY:-0}"
 
+# Per-stage concurrency. Stage 3 is serial by construction and takes no setting.
+GUIDE_PARALLEL="${GUIDE_PARALLEL:-3}"
+DUMP_PARALLEL="${DUMP_PARALLEL:-$GUIDE_PARALLEL}"
+
+# Stage 7 probes a small, representative set rather than all 192 runs: both
+# architectures on one reward at one beta and one seed, which is what the margin
+# and scale figures compare. Run names carry the -s<seed> suffix, so they have to
+# be built from the grid rather than left to the script's un-seeded defaults.
+ABL_REWARD="${ABL_REWARD:-osim}"
+ABL_BETA="${ABL_BETA:-10}"
+ABL_SEED="${ABL_SEED:-${SEEDS%% *}}"
+ABL_SECTIONS="${ABL_SECTIONS:-ceiling guide rollout}"
+if [[ -z "${ABL_RUNS:-}" ]]; then
+  ABL_RUNS=""
+  for g in $GUIDES; do
+    ABL_RUNS="${ABL_RUNS} sweep-${ABL_REWARD}-${g}-db-replay_off-b${ABL_BETA}-s${ABL_SEED}"
+  done
+  ABL_RUNS="${ABL_RUNS# }"
+fi
+
 MAX_RETRIES="${MAX_RETRIES:-3}"
-STAGES="${STAGES:-1 3 4 6 8}"
+# Fine-tuning runs last of the training stages, and the harvest follows it
+# because it reads the molecule streams stage 3 records.
+STAGES="${STAGES:-1 4 6 7 3 8}"
 BACKOFF="${BACKOFF:-30}"
 
 source "$HERE/common.sh"
@@ -105,20 +151,35 @@ START=$SECONDS
 say "study grid: rewards='${REWARDS}' guides='${GUIDES}' objectives='${OBJECTIVES}'"
 say "            betas='${BETAS}' replay='${REPLAYS}' seeds='${SEEDS}'"
 say "            ${MAX_EPOCHS}x${STEPS} steps at batch ${BSZ}, guard ${GUARD_STALL_MINUTES} min,"
-say "            up to ${MAX_RETRIES} attempts per stage, MAX_PARALLEL=${MAX_PARALLEL}"
+say "            up to ${MAX_RETRIES} attempts per stage"
+say "            stage order '${STAGES}' | guides x${GUIDE_PARALLEL}, dumps x${DUMP_PARALLEL}, fine-tune serial"
+say "            ablations: sections '${ABL_SECTIONS}' over [${ABL_RUNS}]"
 
+# `env` rather than a bare prefix so each stage gets exactly the concurrency it
+# should have, with nothing leaking into the next one.
 for s in $STAGES; do
   case "$s" in
-    1) run_stage "1 guides"      bash "$HERE/01_train_guides.sh" ;;
-    # the fine-tune reward list differs from the guide one
-    3) REWARDS="$FT_REWARDS" run_stage "3 fine-tune" bash "$HERE/03_finetune.sh" ;;
-    4) run_stage "4 dumps"       bash "$HERE/04_dump_guides.sh" ;;
-    6) run_stage "6 flips"       bash "$HERE/06_flip_diagnostics.sh" ;;
+    1) run_stage "1 guides" \
+         env MAX_PARALLEL="$GUIDE_PARALLEL" bash "$HERE/01_train_guides.sh" ;;
+    4) run_stage "4 dumps" \
+         env MAX_PARALLEL="$DUMP_PARALLEL" bash "$HERE/04_dump_guides.sh" ;;
+    6) run_stage "6 flips" \
+         env MAX_PARALLEL=1 bash "$HERE/06_flip_diagnostics.sh" ;;
+    7) for sec in $ABL_SECTIONS; do
+         run_stage "7 ablations/${sec}" \
+           env MAX_PARALLEL=1 RUNS="$ABL_RUNS" \
+               SINGLE_CKPT="" bash "$HERE/07_ablations.sh" "$sec"
+       done ;;
+    # one configuration at a time, and the fine-tune reward list has no nitrogen
+    3) run_stage "3 fine-tune" \
+         env MAX_PARALLEL=1 REWARDS="$FT_REWARDS" bash "$HERE/03_finetune.sh" ;;
     8) for b in hard_osimertinib perindopril_rings zaleplon_with_other_formula; do
-         BENCH="$b" run_stage "8 harvest ${b}" bash "$HERE/08_analysis.sh" harvest
+         run_stage "8 harvest ${b}" \
+           env MAX_PARALLEL=1 BENCH="$b" bash "$HERE/08_analysis.sh" harvest
        done
-       run_stage "8 baselines"   bash "$HERE/08_analysis.sh" baseline ;;
-    *) say "unknown stage '$s' (valid: 1 3 4 6 8)" ;;
+       run_stage "8 baselines" \
+         env MAX_PARALLEL=1 bash "$HERE/08_analysis.sh" baseline ;;
+    *) say "unknown stage '$s' (valid: 1 3 4 6 7 8)" ;;
   esac
 done
 

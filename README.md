@@ -54,6 +54,7 @@ let `scripts/common.sh` set `PYTHONPATH` for you.
 │   ├── 07_ablations.sh       mechanism ablations
 │   ├── 08_analysis.sh        harvest, best-of-N baselines, reward histograms
 │   ├── run_all.sh            all eight stages in order
+│   ├── run_study.sh          the supervised study: guides x3, fine-tunes last
 │   ├── supervise_run.sh      restart a job that stalls or crashes
 │   └── prior/                SLURM helpers for pretraining Quetzal itself
 ├── ablations/                the mechanism probes stage 7 drives
