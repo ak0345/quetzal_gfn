@@ -27,6 +27,8 @@ def main():
     ap.add_argument("--temp", default="1.0")
     ap.add_argument("--max_pos", type=int, default=8)
     ap.add_argument("--rewards", default=None, help="e.g. osim,peri")
+    ap.add_argument("--exclude", default="",
+                    help="comma-separated substrings of run names to drop")
     ap.add_argument("--annotate", action="store_true",
                     help="label the highest and lowest curves")
     fs.add_arg_common(ap, "out/fig06_flip_position_raw.pdf")
@@ -35,11 +37,14 @@ def main():
 
     reports = fs.load_flip_reports(args.flips_root, args.temp)
     rewards = args.rewards.split(",") if args.rewards else None
+    exclude = tuple(x for x in args.exclude.split(",") if x)
 
     fig, ax = plt.subplots(figsize=(args.width * 0.62, 3.2))
     curves = []
     for label, (doc, blk) in sorted(reports.items()):
         if rewards and not any(f"-{r}-" in label for r in rewards):
+            continue
+        if any(x in label for x in exclude):
             continue
         raw = blk.get("raw") or {}
         fb, sb = raw.get("flip_by_position"), raw.get("state_by_position")

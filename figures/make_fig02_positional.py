@@ -37,7 +37,7 @@ import matplotlib.pyplot as plt
 import figstyle as fs
 
 
-def pooled_curves(reports, max_pos, rewards=None):
+def pooled_curves(reports, max_pos, rewards=None, exclude=()):
     """Pool flip counts and margin sums across runs, position by position."""
     flips = np.zeros(max_pos)
     states = np.zeros(max_pos)
@@ -48,6 +48,8 @@ def pooled_curves(reports, max_pos, rewards=None):
 
     for label, (doc, blk) in reports.items():
         if rewards and not any(f"-{r}-" in label for r in rewards):
+            continue
+        if any(x in label for x in exclude):
             continue
         raw = blk.get("raw") or {}
         fb = raw.get("flip_by_position")
@@ -79,13 +81,16 @@ def main():
     ap.add_argument("--max_pos", type=int, default=16)
     ap.add_argument("--rewards", default=None,
                     help="comma-separated subset, e.g. osim,peri")
+    ap.add_argument("--exclude", default="",
+                    help="comma-separated substrings of run names to drop")
     fs.add_arg_common(ap, "out/fig02_positional.pdf")
     args = ap.parse_args()
     fs.use_paper_style()
 
     reports = fs.load_flip_reports(args.flips_root, args.temp)
     rewards = args.rewards.split(",") if args.rewards else None
-    rate, gap, states, used = pooled_curves(reports, args.max_pos, rewards)
+    exclude = tuple(x for x in args.exclude.split(",") if x)
+    rate, gap, states, used = pooled_curves(reports, args.max_pos, rewards, exclude)
 
     fig, ax = plt.subplots(figsize=(args.width * 0.62, 3.2))
     x = np.arange(len(rate))

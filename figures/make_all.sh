@@ -59,6 +59,15 @@ run fig12 make_fig12_mpo_components.py
 run fig13 make_fig13_sample_efficiency.py
 run fig14 make_fig14_quality_vs_score.py
 
+# the PMO comparison writes a LaTeX table as well as a figure
+printf '%-6s %-34s ' "pmo" "make_table_pmo.py"
+if "$PY" make_table_pmo.py --out "${OUT_DIR}/tab_pmo.tex" \
+     --plot "${OUT_DIR}/fig_pmo.${FORMAT}" >/dev/null 2>&1; then
+  echo "ok"; ok=$((ok+1))
+else
+  echo "SKIPPED (input missing)"; skipped=$((skipped+1)); SKIPPED_FIGS+=("pmo")
+fi
+
 echo
 echo "=== $ok written, $skipped skipped, $failed failed ==="
 if (( skipped )); then

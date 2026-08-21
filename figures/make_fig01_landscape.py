@@ -31,7 +31,7 @@ import matplotlib.pyplot as plt
 import figstyle as fs
 
 
-def guide_points(rows, bench):
+def guide_points(rows, bench, exclude=()):
     """Guide-sweep configurations for one benchmark, as final top-10."""
     pts = []
     for r in rows:
@@ -39,7 +39,7 @@ def guide_points(rows, bench):
         if not name.startswith("sweep-") or r.get("reward") != bench:
             continue
         fam = fs.guide_family(name)
-        if fam is None:
+        if fam is None or any(x in name for x in exclude):
             continue
         v = fs.f(r.get("guided_reward_top10_mean"))
         if np.isnan(v):
@@ -94,11 +94,15 @@ def main():
     ap.add_argument("--bench", default="both", choices=["osim", "peri", "both"])
     ap.add_argument("--ft_metric", default="auc_top10",
                     choices=["auc_top10", "top10"])
+    ap.add_argument("--exclude", default="",
+                    help="comma-separated substrings of run names to drop, "
+                         "e.g. tempgain")
     fs.add_arg_common(ap, "out/fig01_landscape.pdf")
     args = ap.parse_args()
     fs.use_paper_style()
 
     benches = ["osim", "peri"] if args.bench == "both" else [args.bench]
+    exclude = tuple(x for x in args.exclude.split(",") if x)
     rows = fs.load_master_table()
 
     # a stable row order, so both panels line up on the same family sequence
@@ -111,7 +115,8 @@ def main():
 
     for ax, bench in zip(axes, benches):
         harvest = fs.load_harvest(bench)
-        pts = guide_points(rows, bench) + ft_points(harvest, args.ft_metric)
+        pts = (guide_points(rows, bench, exclude)
+               + ft_points(harvest, args.ft_metric))
         p0 = prior_point(rows, bench)
         if p0:
             pts.append(p0)
