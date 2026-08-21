@@ -4,21 +4,9 @@ Code and experiments for **A Characterization of Steerability Limits in Frozen 3
 Molecular Priors** ([paper](paper/steerability-limits-frozen-3d-priors.pdf)).
 
 We steer [Quetzal](https://arxiv.org/abs/2505.13791), an autoregressive 3D
-molecular model trained on GEOM-Drugs, toward GuacaMol MPO objectives across 51
-configurations spanning three guide architectures, four training objectives and
-four fine-tuning scopes. All of them reach approximately the score obtained by
-drawing the same number of molecules from GEOM-Drugs itself, and on Perindopril
-MPO none exceeds it.
-
-The molecules generated are nonetheless valid, unique and novel relative to the
-training corpus (novelty > 0.9, mean nearest-neighbour similarity ≈ 0.42), so
-what is bounded is the *achievable score*, not the chemistry explored. The
-pattern tracks the confidence of the converged prior: 72% of atom decisions have
-a top-1 logit margin above 8, and that confidence grows along the construction
-path — guides change the sampled atom in up to 89% of states at the first
-position, but under 10% by the fifth. Fine-tuning the prior's own weights does
-not overcome the bound; full-weight fine-tuning is the lowest-scoring
-configuration tested.
+molecular model trained on GEOM-Drugs, toward GuacaMol MPO objectives across many
+configurations spanning three guide architectures, five training objectives and
+four fine-tuning scopes.
 
 ---
 
