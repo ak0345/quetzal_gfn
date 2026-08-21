@@ -32,6 +32,7 @@ let `scripts/common.sh` set `PYTHONPATH` for you.
 ```
 ├── paper/                    the paper this code accompanies
 ├── scripts/                  experiment drivers, one per stage — start here
+│   ├── README.md             what each stage does and how to run them
 │   ├── common.sh             shared paths, throttling, checkpoint resolution
 │   ├── 01_train_guides.sh    the guide sweep
 │   ├── 02_train_components.sh per-component guides + the stability control
