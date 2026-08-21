@@ -49,9 +49,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 require_prior
 
 WHICH="${1:-all}"
+[[ "$WHICH" != "all" ]] && REWARDS="$WHICH"
 
 MOLROOT="${MOLROOT:-${RESULTS_ROOT}/oracle_gfn_mols}"
 SEEDS="${SEEDS:-}"          # empty -> one unsuffixed run per configuration
+REWARDS="${REWARDS:-osim peri zaleplon}"
+LORA_RANKS="${LORA_RANKS:-4 16 64}"
+BETA="${BETA:-10}"
+BETA_START="${BETA_START:-2}"
+
+# ~10,000 molecules per configuration, which is the harvest budget
+BSZ="${BSZ:-64}";        STEPS_SMALL="${STEPS_SMALL:-40}";  EPOCHS_SMALL="${EPOCHS_SMALL:-4}"
+BSZ_FULL="${BSZ_FULL:-12}"; STEPS_FULL="${STEPS_FULL:-140}"; EPOCHS_FULL="${EPOCHS_FULL:-6}"
 SKIP_SANITY="${SKIP_SANITY:-0}"
 ONLY="${ONLY:-}"
 DEVICE="${DEVICE:-0}"
@@ -93,6 +102,8 @@ run () {
     --objective rtb
     --sample_temp 1.0 --rand_eps 0.0
     --logz_lr 1e-2 --grad_clip 1.0
+    --guard_stall_minutes "$GUARD_STALL_MINUTES"
+    --guard_reward_timeout "$GUARD_REWARD_TIMEOUT"
     --record_dir "$MOLROOT/$name"
     ${seed_arg[@]+"${seed_arg[@]}"}
     "$@")
@@ -116,8 +127,9 @@ run () {
 # reward_args <osim|peri> -- the assembled benchmark, via the guacamol passthrough
 reward_args () {
   case "$1" in
-    osim) echo "--reward guacamol --reward_smiles hard_osimertinib" ;;
-    peri) echo "--reward guacamol --reward_smiles perindopril_rings" ;;
+    osim)     echo "--reward guacamol --reward_smiles hard_osimertinib" ;;
+    peri)     echo "--reward guacamol --reward_smiles perindopril_rings" ;;
+    zaleplon) echo "--reward guacamol --reward_smiles zaleplon_with_other_formula" ;;
   esac
 }
 
@@ -145,113 +157,63 @@ fi
 for SEED in ${SEEDS:-""}; do
 [[ -n "$SEED" ]] && say "===== training seed ${SEED} ====="
 
-# --------------------------- 1. Osimertinib MPO ------------------------------
-# beta anneals linearly from beta_start to reward_beta over beta_anneal_epochs.
-if [[ "$WHICH" == "all" || "$WHICH" == "osim" ]]; then
-  RA="$(reward_args osim)"
+# ------------------------- 1. the benchmark runs -----------------------------
+# One pass per reward. Every configuration is sized to collect ~10,000 molecules,
+# which is the oracle budget stage 8 harvests at, so no run generates samples that
+# the budget slice would throw away.
+#
+#   proj / atom : bsz 64, 4 epochs x 40 steps  = 160 steps -> 10,240 molecules
+#   full        : bsz 12, 6 epochs x 140 steps = 840 steps -> 10,080 molecules
+#
+# beta anneals from BETA_START to BETA over the first half of the run, so each
+# configuration spends its second half at the target tilt.
+for REWARD in $REWARDS; do
+  RA="$(reward_args "$REWARD")"
+  [[ -z "$RA" ]] && { say "SKIP unknown reward $REWARD"; continue; }
+  say "----- $REWARD -----"
 
-  # proj, full rank. The headline configuration: exact ratio, 98,304 parameters.
+  # ---- proj: head only, exact RTB ratio ----
   # shellcheck disable=SC2086
-  run rtb-proj-osim-b10 --finetune_scope proj $RA \
-    --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 \
-    --bsz 64 --steps_per_epoch 100 --max_epochs 10 --lr 1e-5
+  run rtb-proj-${REWARD}-b${BETA} --finetune_scope proj $RA \
+    --reward_beta "$BETA" --beta_start "$BETA_START" --beta_anneal_epochs 2 \
+    --bsz "$BSZ" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
+    --lr 1e-5
 
-  # the one configuration that clears the dataset baseline by a real margin,
-  # and does so while uniqueness falls from 0.997 to 0.854
-  # shellcheck disable=SC2086
-  run rtb-proj-osim-b20 --finetune_scope proj $RA \
-    --reward_beta 20 --beta_start 5 --beta_anneal_epochs 4 \
-    --bsz 64 --steps_per_epoch 100 --max_epochs 10 --lr 1e-5
-
-  # LoRA on proj_logits: the capacity dial below full-rank proj
-  for R in 4 16 64; do
+  for R in $LORA_RANKS; do
     # shellcheck disable=SC2086
-    run rtb-lora${R}-osim-b10 --finetune_scope proj \
+    run rtb-proj-lora${R}-${REWARD}-b${BETA} --finetune_scope proj \
       --lora_rank "$R" --lora_targets proj_logits --lora_alpha 16 $RA \
-      --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 \
-      --bsz 64 --steps_per_epoch 100 --max_epochs 6 --lr 1e-4
+      --reward_beta "$BETA" --beta_start "$BETA_START" --beta_anneal_epochs 2 \
+      --bsz "$BSZ" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
+      --lr 1e-4
   done
 
-  # rank-64 repeated from a different initialisation (Table 8, "alt. init")
+  # ---- atom: head plus the encode1 trunk, approximate ratio ----
   # shellcheck disable=SC2086
-  run rtb-lora64-osim-b10-end --finetune_scope proj \
-    --lora_rank 64 --lora_targets proj_logits --lora_alpha 16 $RA \
-    --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 \
-    --bsz 64 --steps_per_epoch 100 --max_epochs 6 --lr 1e-4
+  run rtb-atom-${REWARD}-b${BETA} --finetune_scope atom $RA \
+    --reward_beta "$BETA" --beta_start "$BETA_START" --beta_anneal_epochs 2 \
+    --bsz "$BSZ" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
+    --lr 5e-6 --trunk_lr_mult 0.1
 
-  # LoRA with the trunk unfrozen: same adapter, approximate ratio
-  for R in 4 16 64; do
+  for R in $LORA_RANKS; do
     # shellcheck disable=SC2086
-    run rtb-atom-lora${R}-osim-b10 --finetune_scope atom \
+    run rtb-atom-lora${R}-${REWARD}-b${BETA} --finetune_scope atom \
       --lora_rank "$R" --lora_targets proj_logits --lora_alpha 16 $RA \
-      --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 \
-      --bsz 16 --steps_per_epoch 100 --max_epochs 6 --lr 1e-4
+      --reward_beta "$BETA" --beta_start "$BETA_START" --beta_anneal_epochs 2 \
+      --bsz "$BSZ" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
+      --lr 1e-4 --trunk_lr_mult 0.1
   done
 
-  # head + trunk, full rank.
-  #
-  # DISCREPANCY: the recorded meta.json for the original rtb-atom-osim-b10 and
-  # rtb-atom-peri-b10 runs says finetune_scope=full, not atom, although the run
-  # names and Table 8 (43.1M trainable parameters) both say atom. The scope is
-  # set to atom here, matching the name and the reported parameter count. If the
-  # recorded value is the accurate one, these two rows belong with FULL and the
-  # capacity axis needs re-running -- resolve before citing them as ATOM.
+  # ---- full: every weight, no LoRA variants ----
+  # The batch drops to fit the autograd graph retained over the rollout, and
+  # logp_grad_frac keeps a random quarter of the per-step graph, which is
+  # unbiased conditional on the trajectory at the cost of variance.
   # shellcheck disable=SC2086
-  run rtb-atom-osim-b10 --finetune_scope atom $RA \
-    --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 \
-    --bsz 32 --steps_per_epoch 100 --max_epochs 6 \
+  run rtb-full-${REWARD}-b${BETA} --finetune_scope full $RA \
+    --reward_beta "$BETA" --beta_start "$BETA_START" --beta_anneal_epochs 3 \
+    --bsz "$BSZ_FULL" --steps_per_epoch "$STEPS_FULL" --max_epochs "$EPOCHS_FULL" \
     --lr 5e-6 --trunk_lr_mult 0.1 --logp_grad_frac 0.25
-
-  # every weight. Batch size drops to fit the retained autograd graph, and
-  # logp_grad_frac keeps a random quarter of the per-step graph -- unbiased
-  # conditional on the trajectory, at the cost of variance. At this batch size
-  # the run reaches 4,800 oracle calls rather than 38,400, which is why it is
-  # reported separately from the capacity axis.
-  # shellcheck disable=SC2086
-  run rtb-full-osim-b10 --finetune_scope full $RA \
-    --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 \
-    --bsz 16 --steps_per_epoch 100 --max_epochs 12 \
-    --lr 5e-6 --trunk_lr_mult 0.1 --logp_grad_frac 0.25
-fi
-
-# --------------------------- 2. Perindopril MPO ------------------------------
-if [[ "$WHICH" == "all" || "$WHICH" == "peri" ]]; then
-  RA="$(reward_args peri)"
-
-  # shellcheck disable=SC2086
-  run rtb-proj-peri-b10 --finetune_scope proj $RA \
-    --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 \
-    --bsz 64 --steps_per_epoch 100 --max_epochs 6 --lr 1e-5
-
-  for R in 4 16 64; do
-    # shellcheck disable=SC2086
-    run rtb-proj-lora${R}-peri-b10 --finetune_scope proj \
-      --lora_rank "$R" --lora_targets proj_logits --lora_alpha 16 $RA \
-      --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 \
-      --bsz 64 --steps_per_epoch 100 --max_epochs 6 --lr 1e-4
-  done
-
-  for R in 4 16 64; do
-    # shellcheck disable=SC2086
-    run rtb-atom-lora${R}-peri-b10 --finetune_scope atom \
-      --lora_rank "$R" --lora_targets proj_logits --lora_alpha 16 $RA \
-      --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 \
-      --bsz 16 --steps_per_epoch 100 --max_epochs 6 --lr 1e-4
-  done
-
-  # see the note on rtb-atom-osim-b10 above: the recorded scope was full
-  # shellcheck disable=SC2086
-  run rtb-atom-peri-b10 --finetune_scope atom $RA \
-    --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 \
-    --bsz 16 --steps_per_epoch 100 --max_epochs 6 \
-    --lr 5e-6 --trunk_lr_mult 0.1 --logp_grad_frac 0.25
-
-  # shellcheck disable=SC2086
-  run rtb-full-peri-b10 --finetune_scope full $RA \
-    --reward_beta 10 --beta_start 2 --beta_anneal_epochs 4 \
-    --bsz 12 --steps_per_epoch 100 --max_epochs 10 \
-    --lr 5e-6 --trunk_lr_mult 0.1 --logp_grad_frac 0.25
-fi
+done
 
 done   # seed loop
 

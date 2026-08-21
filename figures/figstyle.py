@@ -35,19 +35,45 @@ BON_DIR     = rel("results", "best_of_n")
 ABL_DIR     = rel("results", "ablations")
 
 HARVEST = {
-    "osim": os.path.join(HARVEST_DIR, "hard_osimertinib_budget10000.json"),
-    "peri": os.path.join(HARVEST_DIR, "perindopril_rings_budget10000.json"),
+    "osim":     os.path.join(HARVEST_DIR, "hard_osimertinib_budget10000.json"),
+    "peri":     os.path.join(HARVEST_DIR, "perindopril_rings_budget10000.json"),
+    "zaleplon": os.path.join(HARVEST_DIR,
+                             "zaleplon_with_other_formula_budget10000.json"),
 }
 
-BENCH_TITLE = {"osim": "Osimertinib MPO", "peri": "Perindopril MPO"}
+BENCH_TITLE = {"osim": "Osimertinib MPO", "peri": "Perindopril MPO",
+               "zaleplon": "Zaleplon MPO"}
 
-# Published GuacaMol baselines, from Brown et al. (2019). These are constants
-# from the literature, not measurements of anything in this repository, which is
-# why they are written here rather than read from an artifact.
+# Published GuacaMol baselines, from Brown et al. (2019). Constants from the
+# literature, not measurements of anything in this repository, which is why they
+# are written here rather than read from an artifact.
 PUBLISHED = {
     "osim": {"REINVENT SMILES": 0.837, "ChEMBL best-of-dataset": 0.839},
     "peri": {"REINVENT SMILES": 0.537, "ChEMBL best-of-dataset": 0.575},
 }
+
+# PMO (Gao et al., 2022), Table 2: AUC top-10 at a 10,000-call oracle budget,
+# mean and standard deviation over five runs. This is the directly comparable
+# convention, since our fine-tuned runs report AUC top-10 at the same budget.
+#
+# CAVEAT: PMO states that its sitagliptin_mpo and zaleplon_mpo differ from the
+# GuacaMol implementations. Our Zaleplon is GuacaMol's
+# `zaleplon_with_other_formula`, so the zaleplon column below is NOT a
+# like-for-like comparison and is marked as such wherever it is drawn.
+PMO_AUC_TOP10 = {
+    #                  osim            peri            zaleplon
+    "REINVENT":       {"osim": (0.837, 0.009), "peri": (0.537, 0.016), "zaleplon": (0.358, 0.062)},
+    "Graph GA":       {"osim": (0.831, 0.005), "peri": (0.538, 0.009), "zaleplon": (0.346, 0.032)},
+    "REINVENT SELFIES": {"osim": (0.820, 0.003), "peri": (0.517, 0.021), "zaleplon": (0.333, 0.026)},
+    "GP BO":          {"osim": (0.787, 0.006), "peri": (0.493, 0.011), "zaleplon": (0.221, 0.072)},
+    "STONED":         {"osim": (0.822, 0.012), "peri": (0.488, 0.011), "zaleplon": (0.325, 0.027)},
+    "LSTM HC":        {"osim": (0.796, 0.002), "peri": (0.489, 0.007), "zaleplon": (0.206, 0.006)},
+    "SMILES GA":      {"osim": (0.817, 0.011), "peri": (0.447, 0.013), "zaleplon": (0.334, 0.041)},
+    "SynNet":         {"osim": (0.796, 0.003), "peri": (0.557, 0.011), "zaleplon": (0.341, 0.011)},
+    "DoG-Gen":        {"osim": (0.774, 0.002), "peri": (0.474, 0.002), "zaleplon": (0.123, 0.016)},
+    "DST":            {"osim": (0.785, 0.004), "peri": (0.462, 0.008), "zaleplon": (0.176, 0.045)},
+}
+PMO_NOT_COMPARABLE = ("zaleplon",)   # PMO reimplements this benchmark
 
 # ----------------------------------------------------------------- palette
 FAMILY_COLOURS = {
@@ -109,12 +135,15 @@ def load_json(path, how=None):
         return json.load(f)
 
 
+BENCH_FN = {"osim": "hard_osimertinib", "peri": "perindopril_rings",
+            "zaleplon": "zaleplon_with_other_formula"}
+
+
 def load_harvest(bench):
     """Harvest JSON for one benchmark: {run_name: {...}, '_reference': {...}}."""
     return load_json(
         HARVEST[bench],
-        how=f"bash scripts/08_analysis.sh harvest   "
-            f"# BENCH={'hard_osimertinib' if bench == 'osim' else 'perindopril_rings'}")
+        how=f"BENCH={BENCH_FN.get(bench, bench)} bash scripts/08_analysis.sh harvest")
 
 
 def load_master_table():

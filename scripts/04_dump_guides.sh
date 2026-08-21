@@ -70,6 +70,7 @@ START_TS=$(date +%s)
 reward_family () {
   case "$1" in
     *-osim-*)     echo "osim" ;;
+    *-zaleplon-*) echo "zaleplon" ;;
     *-fexo-*)     echo "fexo" ;;
     *-peri-*)     echo "peri" ;;
     *-nitrogen-*) echo "nitrogen" ;;

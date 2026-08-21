@@ -24,6 +24,13 @@ REF_SMILES="${REF_SMILES:-reference/geom_drugs_smiles.txt}"
 RESULTS_ROOT="${RESULTS_ROOT:-results}"
 LOG_ROOT="${LOG_ROOT:-logs/drivers}"
 
+# Hang guard (hang_guard.py), passed to every training entry point. A run whose
+# batches stop progressing for GUARD_STALL_MINUTES dumps its stacks, flushes the
+# molecule log and exits 17, which the retry loop treats as recoverable.
+GUARD_STALL_MINUTES="${GUARD_STALL_MINUTES:-10}"
+GUARD_REWARD_TIMEOUT="${GUARD_REWARD_TIMEOUT:-20}"
+GUARD_FLAGS="--guard_stall_minutes ${GUARD_STALL_MINUTES} --guard_reward_timeout ${GUARD_REWARD_TIMEOUT}"
+
 DRY="${DRY:-0}"                       # 1 -> print commands, run nothing
 MAX_PARALLEL="${MAX_PARALLEL:-1}"     # concurrent jobs on the shared GPU
 NUM_GPUS="${NUM_GPUS:-1}"             # for round-robin CUDA_VISIBLE_DEVICES

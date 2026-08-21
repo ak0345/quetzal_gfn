@@ -5,20 +5,21 @@
 # Trains a small guide on top of the frozen Quetzal prior across four axes:
 #
 #   seed      : training seed (opt-in, see below)
-#   guide     : hidden | tempgain | base       (where the residual is injected)
-#   objective : db | rtb | revkl | fwdkl       (what it is trained to minimise)
+#   guide     : hidden | base                  (where the residual is injected)
+#   objective : db | rtb                       (what it is trained to minimise)
 #   replay    : on | off                       (db/rtb only; the KL branches
 #                                               have no trajectory buffer)
-#   beta      : reward exponent
-#   reward    : osim | fexo | peri             (GuacaMol MPO benchmarks)
+#   beta      : reward exponent, 1 | 10 | 100
+#   reward    : osim | peri | zaleplon         (GuacaMol MPO benchmarks)
 #               nitrogen                       (dense positive control)
 #
 # Training only -- no eval, no dump. Scoring happens in stage 4, so a sweep can
 # run to completion on one GPU and be measured afterwards. Each run is skipped
 # if its checkpoint directory already holds a *.ckpt, so the sweep is resumable.
 #
-# The full cross product (minus the invalid replay+KL combinations) is 288 runs.
-# SUBSET=1 (the default) runs the reduced grid the paper reports.
+# SUBSET=1 (the default) runs the study grid: 4 rewards x 2 guides x 2 objectives
+# x 2 replay settings x 3 betas = 96 configurations, or 192 runs at two seeds.
+# SUBSET=0 restores the wider matrix including tempgain and the KL objectives.
 #
 # SEEDS is opt-in and empty by default, which trains one run per configuration
 # under whatever the dataclass default is, with names exactly as before. Setting
@@ -45,8 +46,9 @@ require_prior
 
 SUBSET="${SUBSET:-1}"
 SEEDS="${SEEDS:-}"          # empty -> one unsuffixed run per configuration
-MAX_EPOCHS="${MAX_EPOCHS:-5}"
+MAX_EPOCHS="${MAX_EPOCHS:-6}"     # 6 x 100 = 600 optimiser steps
 STEPS="${STEPS:-100}"
+BSZ="${BSZ:-128}"
 LOGDIR="${LOGDIR:-${LOG_ROOT}/guides}"
 mkdir -p "$LOGDIR"
 
@@ -54,11 +56,11 @@ mkdir -p "$LOGDIR"
 # Each axis is a space-separated string so it can be overridden from the
 # environment, then split into an array.
 if [[ "$SUBSET" == "1" ]]; then
-  : "${GUIDES:=hidden tempgain base}"
+  : "${GUIDES:=hidden base}"
   : "${OBJECTIVES:=db rtb}"
   : "${REPLAYS:=on off}"
-  : "${BETAS:=1 10}"
-  : "${REWARDS:=nitrogen osim peri fexo}"
+  : "${BETAS:=1 10 100}"
+  : "${REWARDS:=osim peri zaleplon nitrogen}"
 else
   : "${GUIDES:=hidden tempgain base}"
   : "${OBJECTIVES:=db rtb revkl fwdkl}"
@@ -80,8 +82,11 @@ read -r -a REWARDS    <<< "$REWARDS"
 reward_flags () {
   case "$1" in
     osim)     echo "--reward guacamol --reward_smiles hard_osimertinib" ;;
-    fexo)     echo "--reward guacamol --reward_smiles hard_fexofenadine" ;;
     peri)     echo "--reward guacamol --reward_smiles perindopril_rings" ;;
+    # GuacaMol's Zaleplon. PMO reimplements this benchmark differently, so PMO's
+    # zaleplon_mpo numbers are not directly comparable to ours.
+    zaleplon) echo "--reward guacamol --reward_smiles zaleplon_with_other_formula" ;;
+    fexo)     echo "--reward guacamol --reward_smiles hard_fexofenadine" ;;
     nitrogen) echo "--reward nitrogen_count" ;;
     *) echo "UNKNOWN_REWARD_$1" ;;
   esac
@@ -145,6 +150,8 @@ for reward in "${REWARDS[@]}"; do
               --objective ${obj} \
               --reward_beta ${beta} \
               ${SEED_ARG} \
+              --bsz ${BSZ} \
+              ${GUARD_FLAGS} \
               $(reward_flags "$reward") \
               $(guide_flags "$guide") \
               $(replay_flags "$replay") \

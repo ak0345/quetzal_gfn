@@ -69,6 +69,7 @@ if [[ "$WHICH" == "default" || "$WHICH" == "all" || "$WHICH" == "harvest" ]]; th
   case "$BENCH" in
     *osimertinib*) MATCH="${MATCH:-osim}" ;;
     *perindopril*) MATCH="${MATCH:-peri}" ;;
+    *zaleplon*)    MATCH="${MATCH:-zaleplon}" ;;
     *)             MATCH="${MATCH:-}" ;;
   esac
 
@@ -109,7 +110,8 @@ if [[ "$WHICH" == "default" || "$WHICH" == "all" || "$WHICH" == "baseline" ]]; t
   # --generate rolls molecules from the frozen prior and scores them; each
   # --smiles_file adds an already-scored pool as another curve. The dataset
   # baseline is the GEOM-Drugs curve read at n = 10,000.
-  for pair in "hard_osimertinib:bon_osim" "perindopril_rings:bon_peri"; do
+  for pair in "hard_osimertinib:bon_osim" "perindopril_rings:bon_peri" \
+              "zaleplon_with_other_formula:bon_zaleplon"; do
     bench="${pair%%:*}"; tag="${pair##*:}"
     [[ -f "${BON_DIR}/${tag}.json" ]] && { echo "[skip] $tag exists"; continue; }
     run_job "best-of-N | $bench" best_of_n_curve.py \
