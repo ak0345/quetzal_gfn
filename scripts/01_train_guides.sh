@@ -14,10 +14,9 @@
 #               nitrogen                       (dense positive control)
 #
 # Training only -- no eval, no dump. Scoring happens in stage 4, so a sweep can
-# run to completion on one GPU and be measured afterwards. The sweep is
-# resumable: a run that finished drops a marker under $CKPT_ROOT/_state and is
-# skipped, while a run with a checkpoint but no marker is re-invoked and resumes
-# from where it stopped.
+# run to completion on one GPU and be measured afterwards. Each run is skipped
+# if its checkpoint directory already holds a *.ckpt, so the sweep is resumable
+# across restarts.
 #
 # SUBSET=1 (the default) runs the study grid: 4 rewards x 2 guides x 2 objectives
 # x 2 replay settings x 3 betas = 96 configurations, or 192 runs at two seeds.
@@ -52,17 +51,7 @@ MAX_EPOCHS="${MAX_EPOCHS:-6}"     # 6 x 100 = 600 optimiser steps
 STEPS="${STEPS:-100}"
 BSZ="${BSZ:-128}"
 LOGDIR="${LOGDIR:-${LOG_ROOT}/guides}"
-# A completion marker per run, written only when gflow.py exits 0.
-#
-# Skipping on "a checkpoint exists" is not the same as skipping on "this run
-# finished". ModelCheckpoint writes every save_interval_minutes, so a run the
-# hang guard killed part-way leaves a checkpoint behind and would be treated as
-# done on the next attempt, which is exactly the case the guard exists to
-# recover. A checkpoint without a marker therefore means partial, and the run is
-# re-invoked; gflow.py resumes from the newest checkpoint on its own, so a run
-# that really had finished exits again almost immediately and gets its marker.
-STATE="${STATE:-${CKPT_ROOT}/_state}"
-mkdir -p "$LOGDIR" "$STATE"
+mkdir -p "$LOGDIR"
 
 # ------------------------------ axes ----------------------------------------
 # Each axis is a space-separated string so it can be overridden from the
@@ -151,12 +140,13 @@ for reward in "${REWARDS[@]}"; do
               SEED_ARG="--seed ${seed}"
             fi
 
-            if [[ -f "${STATE}/${NAME}.done" ]]; then
-              echo "[skip $COUNT] $NAME (complete; rm ${STATE}/${NAME}.done to redo)"
-              SKIPPED=$((SKIPPED+1)); continue
-            fi
+            # A run with any checkpoint is treated as done. That includes a run
+            # stopped part-way by the hang guard or the wall-clock limit, which
+            # will be skipped rather than resumed; delete its checkpoint
+            # directory to force it to continue.
             if compgen -G "${CKPT_ROOT}/${NAME}/checkpoints/*.ckpt" > /dev/null; then
-              echo "[resume $COUNT] $NAME (checkpoint present, no completion marker)"
+              echo "[skip $COUNT] $NAME (checkpoint exists)"
+              SKIPPED=$((SKIPPED+1)); continue
             fi
 
             CMD="$PY gflow.py \
@@ -186,9 +176,9 @@ for reward in "${REWARDS[@]}"; do
               eval "$CMD" > "${LOGDIR}/${NAME}.log" 2>&1
               RC=$?
               case $RC in
-                0)  touch "${STATE}/${NAME}.done" ;;
-                17) echo "[stall] $NAME hit the hang guard; a retry will resume it" ;;
-                18) echo "[timelimit] $NAME hit ${MAX_TRAIN_HOURS}h; a retry will resume it" ;;
+                0)  ;;
+                17) echo "[stall] $NAME hit the hang guard (see ${LOGDIR}/${NAME}.log)" ;;
+                18) echo "[timelimit] $NAME stopped at ${MAX_TRAIN_HOURS}h (see ${LOGDIR}/${NAME}.log)" ;;
                 *)  echo "[warn] $NAME exited $RC (see ${LOGDIR}/${NAME}.log)" ;;
               esac
             ) &
