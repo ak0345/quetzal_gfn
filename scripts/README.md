@@ -39,7 +39,7 @@ Not every stage checks, and they do not all check the same thing.
 
 | Stage | Skips already-done work? | What it looks for |
 |---|---|---|
-| 1 guides | yes | `$CKPT_ROOT/_state/<run>.done` |
+| 1 guides | yes | any `*.ckpt` in the run directory |
 | 2 components | yes | any `*.ckpt` in the run directory |
 | 3 fine-tune | yes | `$MOLROOT/_state/<run>.done` |
 | 4 dumps | yes | `dump_summary.json` per (run, dump seed) |
@@ -53,44 +53,41 @@ Stages 7 and 8's harvest re-running is deliberate: both are cheap CPU work that
 reads whatever is on disk now, and both should pick up runs that finished since
 the last pass.
 
-### Finished versus merely started
+### What "done" means for the guides
 
-Stage 1 distinguishes the two, and this matters more than it sounds.
+Stage 1 skips on **a checkpoint existing**, not on a completion record. That is
+what makes it work across a pod restart: runs finished in an earlier session are
+recognised from their checkpoints alone, with no bookkeeping to carry forward.
 
+The trade-off is that it cannot tell a finished run from one stopped part-way.
 `ModelCheckpoint` writes every `save_interval_minutes` (10), so a run the hang
-guard kills at step 300 of 600 leaves a checkpoint behind. Skipping on "a
-checkpoint exists" would treat that as done and silently leave the run
-incomplete, which is exactly the case the guard exists to recover from.
+guard killed at step 300 of 600, or one that hit `MAX_TRAIN_HOURS`, leaves a
+checkpoint and will be **skipped rather than resumed** on the next attempt.
 
-So stage 1 writes a marker only when `gflow.py` exits 0, and keys the skip on
-that:
+The log says which happened, so a partial run is identifiable after the fact:
 
 ```
-fresh                       -> [run]     trains from scratch
-checkpoint, no marker       -> [resume]  re-invoked; gflow.py resumes from the newest ckpt
-marker present              -> [skip]    complete
+[stall]     <run> hit the hang guard (see <log>)
+[timelimit] <run> stopped at 3h (see <log>)
+[warn]      <run> exited 2 (see <log>)
 ```
 
-A run that really had finished but predates the marker is re-invoked once,
-resumes at its final epoch, exits almost immediately and gets its marker, so the
-scheme is self-healing rather than a reason to retrain.
+To continue such a run, delete its checkpoint directory and re-invoke; `gflow.py`
+picks up the newest checkpoint via `--resume_path` if you point it there, or
+retrains from scratch otherwise. Grepping the driver log for `[stall]` and
+`[timelimit]` after a sweep is the cheapest way to find them.
 
-Stage 3 has always worked this way, via `$MOLROOT/_state/<run>.done`.
-
-Stage 2 still skips on any checkpoint, so the same caveat applies there. It is
-not in any study runner, so it has not been changed.
+Stage 3 does keep a `.done` marker under `$MOLROOT/_state`, and has since the
+start, so its fine-tune runs distinguish finished from interrupted.
 
 ### Forcing a redo
 
 ```bash
-rm "$CKPT_ROOT/_state/sweep-osim-hidden-db-replay_off-b10-s0.done"   # stage 1
+rm -r logs/quetzal-gfn/sweep-osim-hidden-db-replay_off-b10-s0        # stage 1
 rm results/oracle_gfn_mols/_state/rtb-proj-osim-b10-s0.done          # stage 3
 rm -r results/dumps/sweep-osim-hidden-db-replay_off-b10-s0           # stage 4
 SKIP_EXISTING=0 bash scripts/06_flip_diagnostics.sh                  # stage 6
 ```
-
-Deleting only the marker re-invokes the run and resumes it. To retrain from
-scratch, delete the run's checkpoint directory too.
 
 ---
 
@@ -337,13 +334,10 @@ Exit-code vocabulary, shared by both trainers:
 | 18 | hit `MAX_TRAIN_HOURS` | no marker, retry resumes |
 | other | real failure | no marker, reported as FAIL |
 
-17 and 18 both leave a sound checkpoint, so the run is paused rather than failed.
-The next attempt picks it up from where it stopped. Watch for a run that logs
-`[timelimit]` on every attempt: it is not converging within the cap, and either
-the cap or the configuration needs changing.
-
-Because each stage gets `MAX_RETRIES` (3) attempts, a run can accumulate up to
-3 x `MAX_TRAIN_HOURS` before the study moves on without it.
+For stage 3 that means the run is paused rather than failed, and the next attempt
+resumes it. **Stage 1 skips on a checkpoint**, so a guide run that hits 17 or 18
+is not resumed automatically; the log line tells you which runs those were. See
+[What "done" means for the guides](#what-done-means-for-the-guides).
 
 **Watch `train/reward_timeouts`.** A timed-out molecule is floored, so a guard
 that fires often quietly reshapes the reward distribution. If that count is not
@@ -370,7 +364,7 @@ ONLY=rtb-proj-osim-b10-s0 bash scripts/03_finetune.sh
 GUIDE_PARALLEL=2 bash scripts/run_study.sh
 
 # force a stage to redo one run (see Resumability)
-rm logs/quetzal-gfn/_state/sweep-osim-hidden-db-replay_off-b10-s0.done
+rm -r logs/quetzal-gfn/sweep-osim-hidden-db-replay_off-b10-s0
 rm results/oracle_gfn_mols/_state/rtb-proj-osim-b10-s0.done
 
 # then the figures
