@@ -376,17 +376,3 @@ rm results/oracle_gfn_mols/_state/rtb-proj-osim-b10-s0.done
 # then the figures
 bash figures/make_all.sh
 ```
-
----
-
-## Two things to check in the current runners
-
-**Step count.** The runners export `MAX_EPOCHS=5` while the inline comment says
-600 optimiser steps. At `STEPS=100` that is 500 steps, not 600. Stage 1's own
-default is 6, so running it standalone gives 600 and running it through a study
-runner gives 500. Set `MAX_EPOCHS=6` in the runner if 600 was intended.
-
-**Zaleplon guides.** No runner has zaleplon in its guide `REWARDS`: they are
-`{osim, peri}`, `{nitrogen, fexo}` and `{peri, osim, fexo, nitrogen}`. Zaleplon
-appears only in `03_finetune-zaleplon.sh`, which is stage 3 only. If you want
-zaleplon guide runs, add it to a runner's `REWARDS`.
