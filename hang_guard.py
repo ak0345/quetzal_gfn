@@ -41,6 +41,40 @@ import faulthandler
 import threading
 
 STALL_EXIT_CODE = 17          # distinctive: a supervisor can retry on this
+TIME_LIMIT_EXIT_CODE = 18     # stopped at --max_train_hours, resumable
+
+# Both codes mean "not finished, but the checkpoint is sound, so re-invoking
+# resumes rather than restarts". A driver should therefore NOT record such a run
+# as complete. Any other non-zero code is a real failure.
+RESUMABLE_EXIT_CODES = (STALL_EXIT_CODE, TIME_LIMIT_EXIT_CODE)
+
+
+def max_time_spec(hours):
+    """Lightning's Trainer(max_time=...) wants "DD:HH:MM:SS". Returns None for a
+    non-positive value, which disables the limit."""
+    if not hours or float(hours) <= 0:
+        return None
+    total = int(round(float(hours) * 3600))
+    d, rem = divmod(total, 86400)
+    h, rem = divmod(rem, 3600)
+    m, sec = divmod(rem, 60)
+    return f"{d:02d}:{h:02d}:{m:02d}:{sec:02d}"
+
+
+def finish_or_exit(trainer, max_epochs, label=""):
+    """Exit 18 when training stopped short of max_epochs because of the wall-clock
+    limit, so the driver leaves the run resumable instead of marking it done.
+
+    Lightning stops at a batch boundary and runs the checkpoint callback first, so
+    the checkpoint on disk is consistent and `ckpt_path=` picks it up next time.
+    """
+    done = getattr(trainer, "current_epoch", None)
+    if done is None or done >= max_epochs:
+        return
+    print(f"[guard] {label or 'run'} stopped at epoch {done}/{max_epochs} on the "
+          f"wall-clock limit; checkpoint saved, re-run to resume", flush=True)
+    sys.stdout.flush(); sys.stderr.flush()
+    raise SystemExit(TIME_LIMIT_EXIT_CODE)
 
 # faulthandler keeps only the file descriptor, so the Python file object must be
 # kept alive or the dump file ends up empty

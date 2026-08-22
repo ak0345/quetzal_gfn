@@ -29,7 +29,12 @@ LOG_ROOT="${LOG_ROOT:-logs/drivers}"
 # molecule log and exits 17, which the retry loop treats as recoverable.
 GUARD_STALL_MINUTES="${GUARD_STALL_MINUTES:-10}"
 GUARD_REWARD_TIMEOUT="${GUARD_REWARD_TIMEOUT:-20}"
-GUARD_FLAGS="--guard_stall_minutes ${GUARD_STALL_MINUTES} --guard_reward_timeout ${GUARD_REWARD_TIMEOUT}"
+# Wall-clock ceiling for a single run, in hours; 0 disables it. Lightning stops
+# at a batch boundary and checkpoints, then the run exits 18. The drivers treat
+# 17 (stall) and 18 (time limit) alike: the run is NOT marked complete, so the
+# next attempt resumes it from that checkpoint.
+MAX_TRAIN_HOURS="${MAX_TRAIN_HOURS:-3}"
+GUARD_FLAGS="--guard_stall_minutes ${GUARD_STALL_MINUTES} --guard_reward_timeout ${GUARD_REWARD_TIMEOUT} --max_train_hours ${MAX_TRAIN_HOURS}"
 
 DRY="${DRY:-0}"                       # 1 -> print commands, run nothing
 MAX_PARALLEL="${MAX_PARALLEL:-1}"     # concurrent jobs on the shared GPU

@@ -104,6 +104,7 @@ run () {
     --logz_lr 1e-2 --grad_clip 1.0
     --guard_stall_minutes "$GUARD_STALL_MINUTES"
     --guard_reward_timeout "$GUARD_REWARD_TIMEOUT"
+    --max_train_hours "$MAX_TRAIN_HOURS"
     --record_dir "$MOLROOT/$name"
     ${seed_arg[@]+"${seed_arg[@]}"}
     "$@")
@@ -112,14 +113,22 @@ run () {
 
   say "START $name -> $MOLROOT/$name"
   local t0=$SECONDS
-  if "${cmd[@]}" 2>&1 | tee -a "$LOGS/$name.log"; then
+  # 17 (stall) and 18 (time limit) leave a sound checkpoint, so no .done marker
+  # is written and the next attempt resumes rather than restarts.
+  "${cmd[@]}" 2>&1 | tee -a "$LOGS/$name.log"
+  local rc=${PIPESTATUS[0]}
+  if [[ $rc -eq 17 || $rc -eq 18 ]]; then
+    say "PAUSE $name (exit $rc: $([[ $rc -eq 17 ]] && echo stall || echo "${MAX_TRAIN_HOURS}h limit")); a retry resumes it"
+    return 0
+  fi
+  if [[ $rc -eq 0 ]]; then
     local n=0
     [[ -f "$MOLROOT/$name/molecules.jsonl" ]] && n=$(wc -l < "$MOLROOT/$name/molecules.jsonl")
     touch "$STATE/$name.done"
     say "DONE  $name ($(( (SECONDS-t0)/60 ))m, $n molecules recorded)"
     COMPLETED+=("$name")
   else
-    say "FAIL  $name (see $LOGS/$name.log)"
+    say "FAIL  $name (exit $rc, see $LOGS/$name.log)"
     FAILED+=("$name"); return 1
   fi
 }

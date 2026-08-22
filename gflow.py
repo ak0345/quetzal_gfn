@@ -51,7 +51,7 @@ from metrics import compute_valid_unique
 from reward_fn import build_reward, mol_to_rdkit
 from tempgain_guide import TempGainGuide
 from hang_guard import (install_faulthandler, guarded_reward,
-                        stall_guard_callback)
+                        stall_guard_callback, max_time_spec, finish_or_exit)
 from replay_buffer import TrajectoryReplayBuffer, collate_replayed
 from rdkit import Chem
 
@@ -291,6 +291,10 @@ class GFNConfig:
     # Only reach for this if a stack dump has shown large molecules to be the
     # cause. 0 disables.
     guard_max_atoms: int = 0
+    # Wall-clock ceiling for one run, in hours. 0 disables it. Lightning stops at
+    # a batch boundary, writes a checkpoint and we exit 18, which the drivers
+    # treat as resumable rather than complete, so re-running continues the run.
+    max_train_hours: float = 0.0
 
 
 
@@ -1327,6 +1331,7 @@ if __name__ == "__main__":
 
     trainer = L.Trainer(
         max_epochs=cfg.max_epochs,
+        max_time=max_time_spec(cfg.max_train_hours),
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=cfg.devices, num_nodes=cfg.num_nodes,
         logger=wandb_logger, log_every_n_steps=10,
@@ -1336,4 +1341,5 @@ if __name__ == "__main__":
 
     dm = StepDataModule(cfg.steps_per_epoch, cfg.num_workers)
     trainer.fit(lit, datamodule=dm, ckpt_path=resume_path)
+    finish_or_exit(trainer, cfg.max_epochs, cfg.name)
     wandb_logger.finalize(status="success")
