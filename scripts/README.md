@@ -7,9 +7,9 @@ number looks wrong, the script tells you which `python ...` produced it.
 Two rules hold everywhere:
 
 - **`DRY=1` prints every command and runs nothing.** Use it before anything long.
-- **Everything is resumable.** A run whose checkpoint, `dump_summary.json` or
-  `_state/<name>.done` marker exists is skipped. Re-invoking a stage costs only
-  what is left to do, which is what makes the retry loop cheap.
+- **Stages check what is already done** and skip it, so re-invoking costs only
+  what is left. That is what makes the retry loop cheap. See
+  [Resumability](#resumability) for exactly what each stage checks.
 
 ---
 
@@ -30,6 +30,67 @@ time MAX_EPOCHS=1 STEPS=100 SEEDS=0 REWARDS=osim GUIDES=hidden \
 That is exactly 12,800 molecules. Divide the wall-clock by 12,800 to get your
 seconds per molecule, then multiply by the molecule count of the grid you intend
 to run. Each molecule is one autoregressive rollout plus one CPU reward call.
+
+---
+
+## Resumability
+
+Not every stage checks, and they do not all check the same thing.
+
+| Stage | Skips already-done work? | What it looks for |
+|---|---|---|
+| 1 guides | yes | `$CKPT_ROOT/_state/<run>.done` |
+| 2 components | yes | any `*.ckpt` in the run directory |
+| 3 fine-tune | yes | `$MOLROOT/_state/<run>.done` |
+| 4 dumps | yes | `dump_summary.json` per (run, dump seed) |
+| 5 composed | yes | a summary for every operator at that seed |
+| 6 flips | yes | a non-empty `flip_report_<run>.json` |
+| 7 ablations | **no** | re-runs every time |
+| 8 harvest | **no** | re-runs every time |
+| 8 baseline | yes | `bon_<tag>.json` |
+
+Stages 7 and 8's harvest re-running is deliberate: both are cheap CPU work that
+reads whatever is on disk now, and both should pick up runs that finished since
+the last pass.
+
+### Finished versus merely started
+
+Stage 1 distinguishes the two, and this matters more than it sounds.
+
+`ModelCheckpoint` writes every `save_interval_minutes` (10), so a run the hang
+guard kills at step 300 of 600 leaves a checkpoint behind. Skipping on "a
+checkpoint exists" would treat that as done and silently leave the run
+incomplete, which is exactly the case the guard exists to recover from.
+
+So stage 1 writes a marker only when `gflow.py` exits 0, and keys the skip on
+that:
+
+```
+fresh                       -> [run]     trains from scratch
+checkpoint, no marker       -> [resume]  re-invoked; gflow.py resumes from the newest ckpt
+marker present              -> [skip]    complete
+```
+
+A run that really had finished but predates the marker is re-invoked once,
+resumes at its final epoch, exits almost immediately and gets its marker, so the
+scheme is self-healing rather than a reason to retrain.
+
+Stage 3 has always worked this way, via `$MOLROOT/_state/<run>.done`.
+
+Stage 2 still skips on any checkpoint, so the same caveat applies there. It is
+not in any study runner, so it has not been changed.
+
+### Forcing a redo
+
+```bash
+rm "$CKPT_ROOT/_state/sweep-osim-hidden-db-replay_off-b10-s0.done"   # stage 1
+rm results/oracle_gfn_mols/_state/rtb-proj-osim-b10-s0.done          # stage 3
+rm -r results/dumps/sweep-osim-hidden-db-replay_off-b10-s0           # stage 4
+SKIP_EXISTING=0 bash scripts/06_flip_diagnostics.sh                  # stage 6
+```
+
+Deleting only the marker re-invokes the run and resumes it. To retrain from
+scratch, delete the run's checkpoint directory too.
 
 ---
 
@@ -121,6 +182,7 @@ there, so stages work from any directory.
 | `NUM_GPUS` | 1 | round-robin `CUDA_VISIBLE_DEVICES` |
 | `GUARD_STALL_MINUTES` | 10 | watchdog on batch progress |
 | `GUARD_REWARD_TIMEOUT` | 20 | per-molecule reward ceiling, seconds |
+| `MAX_TRAIN_HOURS` | 3 | wall-clock ceiling per run, 0 disables |
 | `DRY` | 0 | 1 prints commands only |
 
 If you downloaded weights from Hugging Face, check the layout. The recorded paths
@@ -256,6 +318,33 @@ Two layers, both on by default:
 Plus `kill -USR1 <pid>` on any training process to print every thread's stack
 without killing it. Dumps land in `logs/quetzal-{gfn,ft}/<name>/`.
 
+### The wall-clock limit
+
+`MAX_TRAIN_HOURS` (3) caps a single run. It uses Lightning's `max_time`, so
+training stops at a batch boundary, the checkpoint callback runs, and the process
+exits **18**.
+
+This is a ceiling, not a schedule. A run that finishes its epochs inside the
+limit exits 0 as usual; the limit only bites on a run that is pathologically
+slow, which is the case worth capping.
+
+Exit-code vocabulary, shared by both trainers:
+
+| Code | Meaning | Driver response |
+|---|---|---|
+| 0 | finished all epochs | write the `.done` marker |
+| 17 | hang guard fired | no marker, retry resumes |
+| 18 | hit `MAX_TRAIN_HOURS` | no marker, retry resumes |
+| other | real failure | no marker, reported as FAIL |
+
+17 and 18 both leave a sound checkpoint, so the run is paused rather than failed.
+The next attempt picks it up from where it stopped. Watch for a run that logs
+`[timelimit]` on every attempt: it is not converging within the cap, and either
+the cap or the configuration needs changing.
+
+Because each stage gets `MAX_RETRIES` (3) attempts, a run can accumulate up to
+3 x `MAX_TRAIN_HOURS` before the study moves on without it.
+
 **Watch `train/reward_timeouts`.** A timed-out molecule is floored, so a guard
 that fires often quietly reshapes the reward distribution. If that count is not
 roughly zero, raise the timeout rather than ignore it.
@@ -280,9 +369,9 @@ ONLY=rtb-proj-osim-b10-s0 bash scripts/03_finetune.sh
 # ease off if VRAM is tight
 GUIDE_PARALLEL=2 bash scripts/run_study.sh
 
-# force a stage to redo one run
+# force a stage to redo one run (see Resumability)
+rm logs/quetzal-gfn/_state/sweep-osim-hidden-db-replay_off-b10-s0.done
 rm results/oracle_gfn_mols/_state/rtb-proj-osim-b10-s0.done
-rm -r logs/quetzal-gfn/sweep-osim-hidden-db-replay_off-b10-s0
 
 # then the figures
 bash figures/make_all.sh
