@@ -39,6 +39,7 @@ import re
 import csv
 import json
 import glob
+import random
 import argparse
 
 import numpy as np
@@ -292,6 +293,9 @@ def main():
     ap.add_argument("--ref_limit", type=int, default=5000,
                     help="max reference molecules to score (scoring the whole "
                          "of GEOM is slow and unnecessary)")
+    ap.add_argument("--ref_seed", type=int, default=0,
+                    help="seed for the reference subsample; fixed so the "
+                         "best-of-dataset baseline is reproducible")
     ap.add_argument("--analysis_topn", type=int, default=100,
                     help="how many top molecules feed the chemistry analyses")
     ap.add_argument("--buckets", type=int, default=20,
@@ -341,7 +345,17 @@ def main():
         # virtual-screening baseline, the analogue of the 0.839 row in the
         # GuacaMol table. Beating it is what separates optimisation from
         # retrieval, so it belongs on every plot.
-        ref_list = list(ref_set)[:args.ref_limit]
+        # `list(ref_set)[:n]` is NOT reproducible: iteration order over a set of
+        # strings depends on PYTHONHASHSEED, so the "best of dataset" baseline
+        # silently changed between runs (0.794 to 0.799 on Osimertinib across
+        # two seeds). Sort for a fixed order, then take a seeded random sample so
+        # the subset is reproducible without being alphabetically biased.
+        ref_sorted = sorted(ref_set)
+        if len(ref_sorted) > args.ref_limit:
+            ref_list = random.Random(args.ref_seed).sample(ref_sorted,
+                                                           args.ref_limit)
+        else:
+            ref_list = ref_sorted
         ref_info = {"name": os.path.basename(args.ref_smiles), "n": len(ref_list)}
         if scorer is not None:
             rs = [scorer(s) for s in ref_list]

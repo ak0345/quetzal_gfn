@@ -235,19 +235,21 @@ def load_harvest(bench):
 def load_reference(bench, budget=10000):
     """The GEOM best-of-N baseline for one benchmark, or None.
 
-    Normally this rides along in the harvest as `_reference`, but it depends
-    only on the dataset and the objective, so a benchmark with no fine-tuning
-    runs can still have one written standalone by make_reference.py. Prefer the
-    harvest's copy and fall back to the standalone file.
+    The standalone file written by make_reference.py is preferred over the
+    harvest's `_reference` block. Harvests produced before 2026-08-28 drew their
+    reference subset with `list(set)[:n]`, whose order depends on
+    PYTHONHASHSEED, so that number moved between runs (0.794 to 0.799 on
+    Osimertinib). The standalone file uses a sorted, seeded sample and is
+    reproducible; the harvest's copy is the fallback only.
     """
-    if os.path.exists(HARVEST.get(bench, "")):
-        ref = (load_json(HARVEST[bench]) or {}).get("_reference")
-        if ref:
-            return ref
     fn = BENCH_FN.get(bench, bench)
     path = os.path.join(HARVEST_DIR, f"_reference_{fn}_{budget}.json")
     if os.path.exists(path):
         return load_json(path)
+    if os.path.exists(HARVEST.get(bench, "")):
+        ref = (load_json(HARVEST[bench]) or {}).get("_reference")
+        if ref:
+            return ref
     return None
 
 

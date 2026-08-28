@@ -170,7 +170,10 @@ def main():
         # Reference lines are labelled vertically along the line itself. Written
         # horizontally they collided with each other and with the panel edge
         # whenever two baselines fell close together.
-        ref = ((harvest.get("_reference") or fs.load_reference(bench) or {})
+        # load_reference() first: it prefers the reproducible standalone file
+        # over the harvest's own block, which older harvests drew with a
+        # hash-order-dependent subset
+        ref = ((fs.load_reference(bench) or harvest.get("_reference") or {})
                .get("top10"))
         if ref is not None:
             ax.axvline(ref, color=fs.REF_COLOUR, ls="--", lw=1.3, zorder=2)

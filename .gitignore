@@ -26,7 +26,7 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 aws
-paper
+papers/
 CLAUDE.md
 .gitignore
 .claude/

@@ -22,6 +22,7 @@ USAGE
 import os
 import sys
 import json
+import random
 import argparse
 
 import numpy as np
@@ -45,6 +46,9 @@ def main():
     ap.add_argument("--limit", type=int, default=10000,
                     help="matched budget: how many dataset molecules to score")
     ap.add_argument("--analysis_topn", type=int, default=100)
+    ap.add_argument("--seed", type=int, default=0,
+                    help="seed for the reference subsample; fixed so the "
+                         "baseline is reproducible")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -64,7 +68,14 @@ def main():
                 ref_set.add(Chem.MolToSmiles(m))
     print(f"[ref] {len(ref_set)} unique reference molecules from {args.ref_smiles}")
 
-    ref_list = list(ref_set)[:args.limit]
+    # Sorted, then a seeded sample: iteration order over a set of strings
+    # depends on PYTHONHASHSEED, so slicing the raw set gives a different
+    # baseline on every run.
+    ref_sorted = sorted(ref_set)
+    if len(ref_sorted) > args.limit:
+        ref_list = random.Random(args.seed).sample(ref_sorted, args.limit)
+    else:
+        ref_list = ref_sorted
     scorer = CachedScorer(get_scorer(args.bench))
     scores = [scorer(s) for s in ref_list]
 
