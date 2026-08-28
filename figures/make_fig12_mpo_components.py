@@ -33,14 +33,16 @@ def short(key):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bench", default="osim", choices=["osim", "peri"])
+    ap.add_argument("--bench", default="auto",
+                    choices=list(fs.ALL_BENCHES) + ["auto"])
     ap.add_argument("--stat", default="mean",
                     help="which per-component statistic to read (default mean)")
     fs.add_arg_common(ap, "out/fig12_mpo_components.pdf")
     args = ap.parse_args()
     fs.use_paper_style()
 
-    h = fs.load_harvest(args.bench)
+    bench = fs.default_bench() if args.bench == "auto" else args.bench
+    h = fs.load_harvest(bench)
     runs = {n: (v.get("extended") or {}).get("components") or {}
             for n, v in sorted(h.items()) if not n.startswith("_")}
     runs = {n: c for n, c in runs.items() if c}
@@ -67,7 +69,7 @@ def main():
                        fontsize=7)
     ax.set_ylabel(f"component score ({args.stat}, top-100)")
     ax.set_ylim(0, 1.05)
-    ax.set_title(f"Per-component scores, {fs.BENCH_TITLE[args.bench]}")
+    ax.set_title(f"Per-component scores, {fs.BENCH_TITLE[bench]}")
 
     spreads = []
     for i, k in enumerate(comps):

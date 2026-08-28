@@ -23,13 +23,14 @@ import figstyle as fs
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bench", default="both", choices=["osim", "peri", "both"])
+    ap.add_argument("--bench", default="auto",
+                    choices=list(fs.ALL_BENCHES) + ["auto", "both", "all"])
     ap.add_argument("--metric", default="top10", choices=["top10", "auc_top10"])
     fs.add_arg_common(ap, "out/fig14_quality_vs_score.pdf")
     args = ap.parse_args()
     fs.use_paper_style()
 
-    benches = ["osim", "peri"] if args.bench == "both" else [args.bench]
+    benches = fs.resolve_benches(args.bench)
     fig, axes = plt.subplots(1, len(benches), figsize=(args.width, 3.2),
                              squeeze=False)
     axes = axes[0]

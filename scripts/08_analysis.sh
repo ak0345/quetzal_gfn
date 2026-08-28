@@ -66,11 +66,15 @@ if [[ "$WHICH" == "default" || "$WHICH" == "all" || "$WHICH" == "harvest" ]]; th
   # Match the runs trained against this benchmark. The nitrogen sanity run is
   # excluded from the benchmark table -- it was never optimised for an MPO
   # objective and its score is a floor, not a result.
+  # Without a branch here MATCH stays empty and EVERY recorded run is scored
+  # against this benchmark, including runs fine-tuned for a different objective.
+  # Those are not configurations of this benchmark and must not enter its table.
   case "$BENCH" in
-    *osimertinib*) MATCH="${MATCH:-osim}" ;;
-    *perindopril*) MATCH="${MATCH:-peri}" ;;
-    *zaleplon*)    MATCH="${MATCH:-zaleplon}" ;;
-    *)             MATCH="${MATCH:-}" ;;
+    *osimertinib*)  MATCH="${MATCH:-osim}" ;;
+    *perindopril*)  MATCH="${MATCH:-peri}" ;;
+    *zaleplon*)     MATCH="${MATCH:-zaleplon}" ;;
+    *fexofenadine*) MATCH="${MATCH:-fexo}" ;;
+    *)              MATCH="${MATCH:-}" ;;
   esac
 
   DIRS=()

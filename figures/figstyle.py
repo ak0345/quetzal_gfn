@@ -9,6 +9,7 @@ Where a figure's input has not been produced yet, the script exits with the
 exact command that produces it rather than emitting a half-empty plot.
 """
 import os
+import re
 import sys
 import json
 import csv
@@ -39,10 +40,17 @@ HARVEST = {
     "peri":     os.path.join(HARVEST_DIR, "perindopril_rings_budget10000.json"),
     "zaleplon": os.path.join(HARVEST_DIR,
                              "zaleplon_with_other_formula_budget10000.json"),
+    "fexo":     os.path.join(HARVEST_DIR, "hard_fexofenadine_budget10000.json"),
 }
 
 BENCH_TITLE = {"osim": "Osimertinib MPO", "peri": "Perindopril MPO",
-               "zaleplon": "Zaleplon MPO"}
+               "zaleplon": "Zaleplon MPO", "fexo": "Fexofenadine MPO"}
+
+# Every benchmark a figure may be asked for, in the order they should be drawn.
+# `osim` stays first because the paper is written around it, but no fine-tuning
+# run in this repository targets it, so it is normally absent from the harvest
+# directory -- see available_benches().
+ALL_BENCHES = ("osim", "peri", "zaleplon", "fexo")
 
 # Published GuacaMol baselines, from Brown et al. (2019). Constants from the
 # literature, not measurements of anything in this repository, which is why they
@@ -50,6 +58,12 @@ BENCH_TITLE = {"osim": "Osimertinib MPO", "peri": "Perindopril MPO",
 PUBLISHED = {
     "osim": {"REINVENT SMILES": 0.837, "ChEMBL best-of-dataset": 0.839},
     "peri": {"REINVENT SMILES": 0.537, "ChEMBL best-of-dataset": 0.575},
+    "fexo": {"REINVENT SMILES": 0.784, "ChEMBL best-of-dataset": 0.817},
+    # Zaleplon has no row here yet. make_fig01_landscape.py prints a notice for
+    # any benchmark missing from this table and draws the panel with the GEOM
+    # line only, rather than silently omitting the comparison. To add one, copy
+    # the row out of Brown et al. (2019) Table 2:
+    #   "zaleplon": {"REINVENT SMILES": <x>, "ChEMBL best-of-dataset": <y>},
 }
 
 # PMO (Gao et al., 2022), Table 2: AUC top-10 at a 10,000-call oracle budget,
@@ -97,6 +111,17 @@ FAMILY_COLOURS = {
 GUIDE_COLOURS = {"base": "#8C8C8C", "hidden": "#4C72B0", "tempgain": "#DD8452"}
 REF_COLOUR = "crimson"
 
+# One colour per objective family, for figures that put every family in a single
+# space. Distinct from GUIDE_COLOURS, which splits by guide architecture.
+BENCH_COLOURS = {
+    "osim":     "#4C72B0",
+    "peri":     "#DD8452",
+    "fexo":     "#55A868",
+    "zaleplon": "#C44E52",
+    "nitrogen": "#937860",
+}
+BACKDROP_COLOURS = {"GEOM": "#BDBDBD", "prior": "#6E6E6E"}
+
 
 def use_paper_style():
     plt.rcParams.update({
@@ -136,14 +161,94 @@ def load_json(path, how=None):
 
 
 BENCH_FN = {"osim": "hard_osimertinib", "peri": "perindopril_rings",
-            "zaleplon": "zaleplon_with_other_formula"}
+            "zaleplon": "zaleplon_with_other_formula",
+            "fexo": "hard_fexofenadine"}
+
+# The `MATCH=` value that selects the fine-tuning runs belonging to a benchmark,
+# used only to print a runnable command when a harvest file is missing.
+BENCH_MATCH = {"osim": "osim", "peri": "peri", "zaleplon": "zaleplon",
+               "fexo": "fexo"}
+
+
+def harvest_cmd(bench):
+    """The command that produces this benchmark's harvest JSON."""
+    return (f"BENCH={BENCH_FN.get(bench, bench)} "
+            f"MATCH={BENCH_MATCH.get(bench, bench)} "
+            f"bash scripts/08_analysis.sh harvest")
+
+
+def available_benches(candidates=None):
+    """Those benchmarks whose harvest JSON has actually been written.
+
+    A figure that spans several benchmarks asks for this rather than assuming
+    the paper's pair, so a run of the pipeline that covers a different set of
+    objectives still produces the figure over what it does have instead of
+    exiting.
+    """
+    return [b for b in (candidates or ALL_BENCHES)
+            if b in HARVEST and os.path.exists(HARVEST[b])]
+
+
+def default_bench(candidates=None):
+    """The populated benchmark carrying the most scored runs.
+
+    Single-panel figures use this instead of a hard-coded name so they land on
+    the objective the pipeline actually covered rather than on whichever one the
+    paper happened to be written around.
+    """
+    have = available_benches(candidates)
+    if not have:
+        die("no harvest JSON found for any benchmark",
+            how=harvest_cmd((candidates or ALL_BENCHES)[0]))
+
+    def n_runs(b):
+        try:
+            with open(HARVEST[b]) as fh:
+                return sum(1 for k in json.load(fh) if not k.startswith("_"))
+        except (OSError, ValueError):
+            return 0
+
+    return max(have, key=n_runs)
+
+
+def resolve_benches(arg, candidates=None):
+    """Map a --bench value to a concrete, populated list of benchmarks.
+
+    "auto"/"both"/"all" mean "whatever has data"; a named benchmark is honoured
+    even if it is missing, so an explicit request still fails loudly with the
+    command that would produce it.
+    """
+    if arg in ("auto", "both", "all"):
+        have = available_benches(candidates)
+        if not have:
+            die("no harvest JSON found for any benchmark",
+                how=harvest_cmd((candidates or ALL_BENCHES)[0]))
+        return have
+    return [arg]
 
 
 def load_harvest(bench):
     """Harvest JSON for one benchmark: {run_name: {...}, '_reference': {...}}."""
-    return load_json(
-        HARVEST[bench],
-        how=f"BENCH={BENCH_FN.get(bench, bench)} bash scripts/08_analysis.sh harvest")
+    return load_json(HARVEST[bench], how=harvest_cmd(bench))
+
+
+def load_reference(bench, budget=10000):
+    """The GEOM best-of-N baseline for one benchmark, or None.
+
+    Normally this rides along in the harvest as `_reference`, but it depends
+    only on the dataset and the objective, so a benchmark with no fine-tuning
+    runs can still have one written standalone by make_reference.py. Prefer the
+    harvest's copy and fall back to the standalone file.
+    """
+    if os.path.exists(HARVEST.get(bench, "")):
+        ref = (load_json(HARVEST[bench]) or {}).get("_reference")
+        if ref:
+            return ref
+    fn = BENCH_FN.get(bench, bench)
+    path = os.path.join(HARVEST_DIR, f"_reference_{fn}_{budget}.json")
+    if os.path.exists(path):
+        return load_json(path)
+    return None
 
 
 def load_master_table():
@@ -185,6 +290,49 @@ def f(x, default=np.nan):
 
 
 # ----------------------------------------------------------------- naming
+# Run directories carry the training seed as a trailing "-s<k>". It identifies
+# the run on disk but says nothing a reader of the paper needs, so it is stripped
+# from every label that reaches a figure.
+_SEED_SUFFIX = re.compile(r"-s\d+$")
+
+
+def clean_label(name):
+    """A run name as it should appear in a figure: no seed suffix."""
+    return _SEED_SUFFIX.sub("", str(name))
+
+
+def distinguishing_labels(names):
+    """Shorten a set of run names to just the parts that differ between them.
+
+    A probe is usually run over guides whose names share everything but one
+    field -- `sweep-osim-base-db-replay_off-b10` against `...-hidden-...` -- and
+    written out in full those labels are far too wide for a categorical axis and
+    overlap into illegibility. Dropping the shared leading and trailing
+    hyphen-separated fields leaves exactly the part a reader needs.
+
+    Falls back to the full cleaned names whenever the result would be empty or
+    ambiguous, so this can never merge two distinct runs into one label.
+    """
+    cleaned = [clean_label(n) for n in names]
+    if len(cleaned) < 2:
+        return cleaned
+
+    parts = [c.split("-") for c in cleaned]
+    n_min = min(len(p) for p in parts)
+
+    head = 0
+    while head < n_min - 1 and len({p[head] for p in parts}) == 1:
+        head += 1
+    tail = 0
+    while tail < n_min - head - 1 and len({p[-1 - tail] for p in parts}) == 1:
+        tail += 1
+
+    short = ["-".join(p[head:len(p) - tail]) for p in parts]
+    if any(not s for s in short) or len(set(short)) != len(set(cleaned)):
+        return cleaned
+    return short
+
+
 def guide_family(name):
     """Map a sweep run name to the family label used in the legend."""
     for g in ("hidden", "tempgain", "base"):

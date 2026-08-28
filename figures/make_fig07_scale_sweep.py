@@ -42,15 +42,25 @@ def main():
     if not sweep:
         fs.die(f"no `B_scale_sweep` block in {args.report}", HOW)
 
-    fig, (axL, axR) = plt.subplots(1, 2, figsize=(args.width, 3.2))
+    # the left panel carries a twin "validity" axis on its right-hand side, so
+    # the panels need a wider gutter than the default to keep it clear of the
+    # right panel
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(args.width * 1.25, 3.4),
+                                   gridspec_kw={"wspace": 0.38})
 
     # ---- left: effect size and validity against the scale factor ----
+    # ablate_guide.py keys these "scale_<x>"; earlier reports used the bare
+    # number, so strip the prefix rather than assuming either shape
+    def scale_of(key):
+        return float(str(key).replace("scale_", ""))
+
     scales, shift, w1, valid = [], [], [], []
-    for k in sorted(sweep, key=lambda s: float(s)):
+    for k in sorted(sweep, key=scale_of):
         d = sweep[k]
-        scales.append(float(k))
+        scales.append(scale_of(k))
         shift.append(d.get("mean_shift"))
-        w1.append(d.get("w1") or d.get("wasserstein") or d.get("w1_distance"))
+        w1.append(d.get("wasserstein1") or d.get("w1")
+                  or d.get("wasserstein") or d.get("w1_distance"))
         valid.append(d.get("validity"))
 
     axL.axhline(0, color="0.8", lw=0.8)
@@ -85,7 +95,8 @@ def main():
     labs = list(resid)
     if labs:
         ratio = [resid[l].get("residual_ratio") for l in labs]
-        kl = [resid[l].get("kl") or resid[l].get("mean_kl") for l in labs]
+        kl = [resid[l].get("mean_KL_guided_vs_prior") or resid[l].get("kl")
+              or resid[l].get("mean_kl") for l in labs]
         x = np.arange(len(labs))
         axR.bar(x - 0.2, ratio, width=0.4, label="||residual|| / ||prior logits||",
                 color=fs.GUIDE_COLOURS["hidden"])
@@ -93,7 +104,8 @@ def main():
             axR.bar(x + 0.2, kl, width=0.4, label="KL(guided || prior)",
                     color=fs.GUIDE_COLOURS["tempgain"])
         axR.set_xticks(x)
-        axR.set_xticklabels(labs, fontsize=7)
+        axR.set_xticklabels(fs.distinguishing_labels(labs), fontsize=7,
+                            rotation=20, ha="right")
         axR.set_yscale("log")
         axR.legend(frameon=False, fontsize=6.5)
         axR.set_title("Residual magnitude")

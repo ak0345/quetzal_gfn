@@ -48,16 +48,18 @@ def main():
         fs.die(f"no `learned.gap_bins` / `per_guide` block in {args.report}", HOW)
 
     x = np.arange(len(bins))
-    fig, (axL, axR) = plt.subplots(1, 2, figsize=(args.width, 3.2))
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(args.width * 1.15, 3.4),
+                                   gridspec_kw={"wspace": 0.28})
 
     plotted = 0
+    short = dict(zip(per, fs.distinguishing_labels(list(per))))
     for lab, d in per.items():
         if "note" in d:          # a plain residual guide has no temp/gain heads
             print(f"[fig] {lab}: {d['note']}")
             continue
         t = d.get("T_by_gap")
         if t:
-            axL.plot(x, t, "o-", ms=4, lw=1.3, label=lab)
+            axL.plot(x, t, "o-", ms=4, lw=1.3, label=short[lab])
             plotted += 1
             fin = [v for v in t if isinstance(v, (int, float))]
             if fin:
@@ -65,25 +67,32 @@ def main():
                       f"  {'(never softens)' if max(fin) <= 1.0 else ''}")
         fr = d.get("flip_rate_by_gap")
         if fr:
-            axR.plot(x, fr, "o-", ms=4, lw=1.3, label=lab)
+            axR.plot(x, fr, "o-", ms=4, lw=1.3, label=short[lab])
 
     if not plotted:
         fs.die("no guide in this probe has temperature heads", HOW)
 
     axL.axhline(1.0, color=fs.REF_COLOUR, ls="--", lw=1.3)
-    axL.text(x[-1], 1.0, "T = 1 ", fontsize=6.5, color=fs.REF_COLOUR,
-             va="bottom", ha="right")
+    # anchored to the left edge, where no curve or legend sits; on the right it
+    # landed on top of both
+    axL.text(x[0], 1.0, " T = 1", fontsize=6.5, color=fs.REF_COLOUR,
+             va="bottom", ha="left")
     axL.set_xticks(x); axL.set_xticklabels(bins, rotation=35, ha="right", fontsize=6.5)
     axL.set_xlabel("prior top-1 logit margin")
     axL.set_ylabel("learned temperature T(h)")
     axL.set_title("Learned temperature by margin")
-    axL.legend(frameon=False, fontsize=6.5)
 
     axR.set_xticks(x); axR.set_xticklabels(bins, rotation=35, ha="right", fontsize=6.5)
     axR.set_xlabel("prior top-1 logit margin")
     axR.set_ylabel("sampled-flip rate")
     axR.set_title("Flip rate by margin")
-    axR.legend(frameon=False, fontsize=6.5)
+
+    # Both panels show the same guides, so the legend is drawn once beneath the
+    # figure rather than twice inside the axes, where the run names are long
+    # enough to cover the curves.
+    handles, labels = axL.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=min(3, len(labels)),
+               frameon=False, fontsize=6.5, bbox_to_anchor=(0.5, -0.13))
 
     fs.save(fig, args.out, args.dpi)
 

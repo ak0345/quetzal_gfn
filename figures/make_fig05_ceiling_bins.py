@@ -46,7 +46,11 @@ def main():
     if not bins:
         fs.die(f"no `saturation.gap_bins` block in {args.report}", HOW)
 
-    fig, (axL, axR) = plt.subplots(1, 2, figsize=(args.width, 3.2))
+    # Extra width and a wide gutter: the left panel carries a twin axis on its
+    # right-hand side, which collides with the right panel's y-label at the
+    # default spacing.
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(args.width * 1.35, 3.4),
+                                   gridspec_kw={"wspace": 0.42})
 
     # ---- left: flip rate by margin bin, with the decision mass behind it ----
     x = np.arange(len(bins))
@@ -62,11 +66,17 @@ def main():
         axL.set_zorder(2)
         axL.patch.set_visible(False)
 
-    for lab, d in (sat.get("per_guide") or {}).items():
+    per_guide = sat.get("per_guide") or {}
+    short = dict(zip(per_guide, fs.distinguishing_labels(list(per_guide))))
+    for lab, d in per_guide.items():
         fr = d.get("flip_rate_by_gap")
         if not fr:
             continue
-        axL.plot(x, fr, "o-", ms=4, lw=1.3, label=lab, zorder=3)
+        # colour by guide family so this figure matches the rest of the paper
+        guide = next((g for g in ("hidden", "tempgain", "base")
+                      if f"-{g}-" in lab), None)
+        axL.plot(x, fr, "o-", ms=4, lw=1.3, label=short[lab],
+                 color=fs.GUIDE_COLOURS.get(guide), zorder=3)
     axL.set_xticks(x)
     axL.set_xticklabels(bins, rotation=35, ha="right", fontsize=6.5)
     axL.set_xlabel("prior top-1 logit margin")
@@ -79,7 +89,11 @@ def main():
         print(f"[fig] {hi*100:.1f}% of decisions sit at a margin above 8")
 
     # ---- right: per-component reward variance over prior samples ----
-    comp = {k: v for k, v in rep.items()
+    # ablate_ceiling.py nests these under `component_variance`; older reports
+    # carried them at the top level, so accept either rather than silently
+    # drawing an empty panel.
+    src = rep.get("component_variance") or rep
+    comp = {k: v for k, v in src.items()
             if isinstance(v, dict) and "std_logr_valid" in v}
     if comp:
         names = list(comp)

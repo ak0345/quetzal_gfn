@@ -38,12 +38,14 @@ PANELS = [("validity", "3D->SMILES rate", None),
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bench", default="osim", choices=["osim", "peri"])
+    ap.add_argument("--bench", default="auto",
+                    choices=list(fs.ALL_BENCHES) + ["auto"])
     fs.add_arg_common(ap, "out/fig11_collapse_panel.pdf")
     args = ap.parse_args()
     fs.use_paper_style()
 
-    h = fs.load_harvest(args.bench)
+    bench = fs.default_bench() if args.bench == "auto" else args.bench
+    h = fs.load_harvest(bench)
     runs = {n: v for n, v in sorted(h.items())
             if not n.startswith("_") and "nitrogen" not in n
             and ((v.get("extended") or {}).get("buckets") or {}).get("calls")}
@@ -77,7 +79,7 @@ def main():
     handles = [plt.Line2D([], [], color=fs.FAMILY_COLOURS[f], lw=1.4) for f in fams]
     fig.legend(handles, fams, loc="lower center", ncol=4, frameon=False,
                bbox_to_anchor=(0.5, -0.10))
-    print(f"[{args.bench}] {len(runs)} runs, {len(have)} panels")
+    print(f"[{bench}] {len(runs)} runs, {len(have)} panels")
     fs.save(fig, args.out, args.dpi)
 
 

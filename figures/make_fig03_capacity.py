@@ -73,8 +73,9 @@ def infer_params(name):
 
 
 def load(path, bench_sub, metric, exclude=("nitrogen",)):
-    if not os.path.exists(path):
-        raise SystemExit(f"{path} not found")
+    # exit 2, not 1, so make_all.sh reports this as a missing input rather than
+    # a broken script and prints the command that produces it
+    fs.need(path, how=fs.harvest_cmd(bench_sub))
     d = json.load(open(path))
     pts = []
     for k, v in d.items():
@@ -106,7 +107,8 @@ def main():
     # prefer the former unless you only need score.
     ap.add_argument("--osim_ft", default=fs.HARVEST["osim"])
     ap.add_argument("--peri_ft", default=fs.HARVEST["peri"])
-    ap.add_argument("--bench", default="both", choices=["osim", "peri", "both"])
+    ap.add_argument("--bench", default="auto",
+                    choices=list(fs.ALL_BENCHES) + ["auto", "both", "all"])
     ap.add_argument("--metric", default="auc_top10",
                     choices=["auc_top10", "top10", "composite"])
     ap.add_argument("--params", default=None,
@@ -123,11 +125,12 @@ def main():
             k, _, v = kv.partition("=")
             overrides[k.strip()] = int(v)
 
-    specs = []
-    if args.bench in ("osim", "both"):
-        specs.append(("osim", args.osim_ft, "Osimertinib MPO"))
-    if args.bench in ("peri", "both"):
-        specs.append(("peri", args.peri_ft, "Perindopril MPO"))
+    # The per-benchmark overrides stay for the two the paper names; every other
+    # benchmark resolves through figstyle, so a pipeline run covering a
+    # different objective still produces the panel.
+    override_path = {"osim": args.osim_ft, "peri": args.peri_ft}
+    specs = [(b, override_path.get(b) or fs.HARVEST[b], fs.BENCH_TITLE[b])
+             for b in fs.resolve_benches(args.bench)]
 
     fig, axes = plt.subplots(1, len(specs), figsize=(args.width, 3.4),
                              squeeze=False)

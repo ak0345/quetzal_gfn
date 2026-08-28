@@ -174,9 +174,13 @@ runp () {   # runp <label> <script> <args...>
 # ------------------------------- ceiling -------------------------------------
 if [[ "$WHICH" == "all" || "$WHICH" == "ceiling" ]] && need_components; then
   hr; echo "ablate_ceiling -- margin binning + component variance"; hr
+  # --weights is not optional even though this probe does not sweep them: the
+  # Composer asserts one weight per guide, and MultiConfig's default carries the
+  # four component teachers, so any other guide count fails without it.
   runp ceiling "$A/ablate_ceiling.py" \
     --guide_ckpts "$CKPTS" --guide_labels "$LABELS" \
     --eval_rewards "$EVAL_COMPONENTS" --train_betas "$BETAS" \
+    --weights "$WEIGHTS" \
     --route "$ROUTE" --n_traj "$NTRAJ" --n_score "$NSCORE" \
     --out_dir "${OUT_ROOT}/ceiling"
 fi
@@ -200,7 +204,7 @@ if [[ "$WHICH" == "all" || "$WHICH" == "flip" ]] && need_components; then
   for temp in 1.0 0.3; do
     runp "flip/t$temp" "$A/ablate_logit_flip_compose.py" \
       --guide_ckpts "$CKPTS" --guide_labels "$LABELS" \
-      --train_betas "$BETAS" --n_samples "$NSAMPLES" \
+      --train_betas "$BETAS" --n_samples "$NSAMPLES" --weights "$WEIGHTS" \
       --route "$ROUTE" --n_traj "$NTRAJ" --flip_temp "$temp" \
       --out_dir "${OUT_ROOT}/flip-t${temp}"
   done
@@ -225,6 +229,7 @@ if [[ "$WHICH" == "all" || "$WHICH" == "tempgain" ]] && need_components; then
   runp tempgain "$A/probe_tempgain.py" \
     --guide_ckpts "$CKPTS" --guide_labels "$LABELS" \
     --eval_rewards "$EVAL_COMPONENTS" --train_betas "$BETAS" \
+    --weights "$WEIGHTS" \
     --route "$ROUTE" --n_traj "$NTRAJ" \
     --out_dir "${OUT_ROOT}/tempgain"
 fi
