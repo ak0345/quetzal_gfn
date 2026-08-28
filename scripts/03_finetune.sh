@@ -59,9 +59,9 @@ BETA="${BETA:-10}"
 BETA_START="${BETA_START:-2}"
 
 # ~10,000 molecules per configuration, which is the harvest budget
-BSZ="${BSZ:-64}";        STEPS_SMALL="${STEPS_SMALL:-40}";  EPOCHS_SMALL="${EPOCHS_SMALL:-4}"
-BSZ_FULL="${BSZ_FULL:-12}"; STEPS_FULL="${STEPS_FULL:-140}"; EPOCHS_FULL="${EPOCHS_FULL:-6}"
-SKIP_SANITY="${SKIP_SANITY:-0}"
+BSZ_ft="${BSZ_ft:-32}";        STEPS_SMALL="${STEPS_SMALL:-80}";  EPOCHS_SMALL="${EPOCHS_SMALL:-5}"
+BSZ_FULL="${BSZ_FULL:-8}"; STEPS_FULL="${STEPS_FULL:-140}"; EPOCHS_FULL="${EPOCHS_FULL:-9}"
+SKIP_SANITY="${SKIP_SANITY:-1}"
 ONLY="${ONLY:-}"
 DEVICE="${DEVICE:-0}"
 export CUDA_VISIBLE_DEVICES="$DEVICE"
@@ -102,7 +102,6 @@ run () {
     --objective rtb
     --sample_temp 1.0 --rand_eps 0.0
     --logz_lr 1e-2 --grad_clip 1.0
-    --guard_stall_minutes "$GUARD_STALL_MINUTES"
     --guard_reward_timeout "$GUARD_REWARD_TIMEOUT"
     --max_train_hours "$MAX_TRAIN_HOURS"
     --record_dir "$MOLROOT/$name"
@@ -186,7 +185,7 @@ for REWARD in $REWARDS; do
   # shellcheck disable=SC2086
   run rtb-proj-${REWARD}-b${BETA} --finetune_scope proj $RA \
     --reward_beta "$BETA" --beta_start "$BETA_START" --beta_anneal_epochs 2 \
-    --bsz "$BSZ" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
+    --bsz "$BSZ_ft" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
     --lr 1e-5
 
   for R in $LORA_RANKS; do
@@ -194,7 +193,7 @@ for REWARD in $REWARDS; do
     run rtb-proj-lora${R}-${REWARD}-b${BETA} --finetune_scope proj \
       --lora_rank "$R" --lora_targets proj_logits --lora_alpha 16 $RA \
       --reward_beta "$BETA" --beta_start "$BETA_START" --beta_anneal_epochs 2 \
-      --bsz "$BSZ" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
+      --bsz "$BSZ_ft" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
       --lr 1e-4
   done
 
@@ -202,7 +201,7 @@ for REWARD in $REWARDS; do
   # shellcheck disable=SC2086
   run rtb-atom-${REWARD}-b${BETA} --finetune_scope atom $RA \
     --reward_beta "$BETA" --beta_start "$BETA_START" --beta_anneal_epochs 2 \
-    --bsz "$BSZ" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
+    --bsz "$BSZ_ft" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
     --lr 5e-6 --trunk_lr_mult 0.1
 
   for R in $LORA_RANKS; do
@@ -210,7 +209,7 @@ for REWARD in $REWARDS; do
     run rtb-atom-lora${R}-${REWARD}-b${BETA} --finetune_scope atom \
       --lora_rank "$R" --lora_targets proj_logits --lora_alpha 16 $RA \
       --reward_beta "$BETA" --beta_start "$BETA_START" --beta_anneal_epochs 2 \
-      --bsz "$BSZ" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
+      --bsz "$BSZ_ft" --steps_per_epoch "$STEPS_SMALL" --max_epochs "$EPOCHS_SMALL" \
       --lr 1e-4 --trunk_lr_mult 0.1
   done
 

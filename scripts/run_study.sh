@@ -72,7 +72,7 @@
 #   STAGES="4 8" bash scripts/run_study.sh       # re-score without retraining
 #   STAGES=3 bash scripts/run_study.sh           # only the fine-tunes
 #
-#   nohup bash scripts/run_study.sh > study.log 2>&1 &
+#   MAX_TRAIN_HOURS=3 nohup bash scripts/run_study.sh > study.log 2>&1 &
 # =============================================================================
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -92,7 +92,7 @@ export BSZ="${BSZ:-128}"
 # the fine-tune half uses its own reward list, which has no nitrogen benchmark
 export FT_REWARDS="${FT_REWARDS:-osim peri}"
 
-export GUARD_STALL_MINUTES="${GUARD_STALL_MINUTES:-10}"
+export GUARD_STALL_MINUTES="${GUARD_STALL_MINUTES:-15}"
 export GUARD_REWARD_TIMEOUT="${GUARD_REWARD_TIMEOUT:-20}"
 export NUM_GPUS="${NUM_GPUS:-1}"
 export DRY="${DRY:-0}"
@@ -105,7 +105,7 @@ DUMP_PARALLEL="${DUMP_PARALLEL:-1}"
 # architectures on one reward at one beta and one seed, which is what the margin
 # and scale figures compare. Run names carry the -s<seed> suffix, so they have to
 # be built from the grid rather than left to the script's un-seeded defaults.
-ABL_REWARD="${ABL_REWARD:-osim}"
+ABL_REWARD="${ABL_REWARD:-osim nitrogen fexo peri}"
 ABL_BETA="${ABL_BETA:-10}"
 ABL_SEED="${ABL_SEED:-${SEEDS%% *}}"
 ABL_SECTIONS="${ABL_SECTIONS:-ceiling guide rollout}"
@@ -120,7 +120,7 @@ fi
 MAX_RETRIES="${MAX_RETRIES:-3}"
 # Fine-tuning runs last of the training stages, and the harvest follows it
 # because it reads the molecule streams stage 3 records.
-STAGES="${STAGES:-1 4 6 7 3 8}"
+STAGES="${STAGES:-4 7}"
 BACKOFF="${BACKOFF:-30}"
 
 source "$HERE/common.sh"

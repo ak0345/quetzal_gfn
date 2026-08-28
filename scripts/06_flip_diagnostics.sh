@@ -115,11 +115,24 @@ for i in "${!CKPTS[@]}"; do
   safe="$(printf '%s' "$label" | tr -c 'A-Za-z0-9._-' '_')"
   json="$OUT_DIR/flip_report_${safe}.json"
 
+  # The probe reads the architecture out of the checkpoint's hyper_parameters,
+  # so nothing here selects it. This is only for the operator: `base` and
+  # `tempgain` are both TempGainGuide instances (the wrapper degenerates to
+  # prior_logits + residual when use_prior_temp and use_residual_gain are both
+  # off), so the class name the probe prints cannot tell them apart. The run
+  # name can, and it is what the aggregator groups on.
+  case "$label" in
+    *-hidden-*)   arch=hidden   ;;
+    *-tempgain-*) arch=tempgain ;;
+    *-base-*)     arch=base     ;;
+    *)            arch=?        ;;
+  esac
+
   if [[ "$SKIP_EXISTING" == "1" && -s "$json" ]]; then
-    echo "[skip] $label"; SKIP=$((SKIP+1)); continue
+    echo "[skip] $label  (arch=$arch)"; SKIP=$((SKIP+1)); continue
   fi
 
-  echo "[run ] $label  <- $ckpt"
+  echo "[run ] $label  (arch=$arch)  <- $ckpt"
   if [[ "$DRY" == "1" ]]; then continue; fi
 
   # keep going: one broken checkpoint should not abort the sweep

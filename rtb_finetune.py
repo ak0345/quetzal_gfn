@@ -216,7 +216,7 @@ class FTConfig:
     # no timeout of its own. A blocked reward call freezes the run while the
     # process stays alive holding its GPU.
     guard_reward_timeout: float = 20.0   # per-molecule ceiling, 0 disables
-    guard_stall_minutes: float = 30.0    # watchdog on batch progress, 0 disables
+    guard_stall_minutes: float = 0.0    # watchdog on batch progress, 0 disables
     # Floor every molecule above this many atoms WITHOUT scoring it. Off by
     # default and it should stay off: flooring by size trains the policy away
     # from that size, which changes the objective rather than guarding it.

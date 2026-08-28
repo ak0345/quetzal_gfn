@@ -34,6 +34,170 @@ if not hasattr(scipy, "histogram"): scipy.histogram = np.histogram
 import torch
 
 
+class _MolView:
+    """Duck-typed stand-in for a chem.Molecule carrying numpy arrays.
+
+    Worker processes need `.atoms` and `.coords` and nothing else: mol_to_rdkit
+    reaches them through _atoms_coords, which accepts numpy via np.asarray. The
+    parent converts the torch tensors before dispatch so no CUDA tensor is ever
+    pickled into a child, and so the real mol_to_rdkit runs unmodified in the
+    worker rather than being duplicated here.
+    """
+    __slots__ = ("atoms", "coords")
+
+    def __init__(self, atoms, coords):
+        self.atoms = atoms
+        self.coords = coords
+
+
+# Reward kinds whose score is a pure function of the SMILES string. For these,
+# build_reward() itself derives the SMILES by running mol_to_rdkit and then
+# MolToSmiles(RemoveHs(...)), so scoring the SMILES we already computed gives
+# the identical number while doing bond perception ONCE instead of twice.
+#
+# Everything else (nitrogen_count, isomer, force) is scored from the molecule.
+# That costs nothing extra: none of those three run bond perception at all,
+# they read atomic numbers or coordinates directly.
+_SMILES_SCORABLE = ("guacamol", "guacamol_component", "qed", "logp", "tpsa",
+                    "similarity")
+
+# Fields build_reward / build_reward_smiles read, plus the guard settings
+# LitGFlowNet applies on top. Passed to workers as a plain dict so nothing
+# model-shaped has to be pickled.
+_REWARD_FIELDS = ("reward", "invalid_logr", "reward_smiles", "reward_target",
+                  "reward_sigma", "reward_formula", "reward_benchmark",
+                  "reward_component", "reward_beta", "force_method",
+                  "guard_reward_timeout", "guard_max_atoms")
+
+_W = {}          # per-worker cache, populated once by _worker_init
+
+
+def reward_payload(cfg):
+    """The subset of a GFNConfig the workers need, as a picklable dict."""
+    return {k: getattr(cfg, k, None) for k in _REWARD_FIELDS}
+
+
+def _worker_init(payload):
+    """Build the scorer once per worker rather than once per molecule."""
+    import types as _types
+    import reward_fn as _rf
+    from hang_guard import guarded_reward
+    cfg = _types.SimpleNamespace(**payload)
+    _W["floor"] = float(cfg.invalid_logr if cfg.invalid_logr is not None else -5.0)
+    if cfg.reward in _SMILES_SCORABLE:
+        _W["smi_scorer"] = _rf.build_reward_smiles(cfg)
+        _W["mol_scorer"] = None
+    else:
+        # same wrapping LitGFlowNet applies, so the numbers match what
+        # compute_log_reward would have produced
+        _W["smi_scorer"] = None
+        _W["mol_scorer"] = guarded_reward(
+            _rf.build_reward(cfg),
+            seconds=float(cfg.guard_reward_timeout or 0),
+            floor=_W["floor"],
+            max_atoms=(cfg.guard_max_atoms or None))
+
+
+def _convert_one(task):
+    """(index, atoms, coords) -> (index, smiles or None, log_reward).
+
+    One bond perception per molecule, feeding both outputs. Runs in a worker.
+    """
+    idx, a, c = task
+    floor = _W.get("floor", -5.0)
+    lr = floor
+    try:
+        from reward_fn import mol_to_rdkit
+        from rdkit import Chem
+        m = _MolView(a, c)
+        if _W.get("mol_scorer") is not None:
+            lr = float(_W["mol_scorer"](m))
+        rd = mol_to_rdkit(m)
+        smi = None
+        if rd is not None:
+            try:
+                smi = Chem.MolToSmiles(Chem.RemoveHs(rd)) or None
+            except Exception:
+                smi = None
+        if _W.get("smi_scorer") is not None:
+            lr = float(_W["smi_scorer"](smi)) if smi else floor
+        return idx, smi, lr
+    except Exception:
+        return idx, None, floor
+
+
+def _convert_parallel(mols, payload, procs, timeout, progress_every=0, tag=""):
+    """Score and convert 3D molecules across a process pool.
+
+    Returns (smiles_by_index, logr_by_index, n_lost). An entry is None for a
+    molecule that failed; n_lost counts molecules abandoned when the pool was
+    torn down, and those keep the invalid floor as their reward.
+
+    Order is preserved by index, which matters: the harvest reads generation
+    order to compute AUC at an oracle budget.
+
+    WHY A POOL AND NOT A TIMEOUT. rdDetermineBonds searches bond orders and
+    charges inside a C++ extension that never returns to the interpreter, so
+    SIGALRM cannot interrupt it (see hang_guard.call_with_timeout). Process
+    isolation is the only thing that can: a wedged worker is killed with its
+    molecule, and the rest of the pool keeps going.
+
+    The timeout is on the interval between COMPLETIONS, not per molecule. While
+    any worker is still returning results the pool is making progress; silence
+    for `timeout` seconds means every remaining worker is stuck, and the ones
+    still outstanding are written off.
+
+    spawn, not fork: the parent has an initialised CUDA context and torch's
+    thread pool by this point, and forking either is a known source of deadlock.
+    """
+    import multiprocessing as _mp
+
+    tasks = []
+    for i, m in enumerate(mols):
+        a = m.atoms
+        c = m.coords
+        a = a.detach().cpu().numpy() if hasattr(a, "detach") else np.asarray(a)
+        c = c.detach().cpu().numpy() if hasattr(c, "detach") else np.asarray(c)
+        tasks.append((i, a, c))
+
+    floor = float(payload.get("invalid_logr") or -5.0)
+    smis = [None] * len(tasks)
+    logrs = [floor] * len(tasks)
+    done = 0
+    ctx = _mp.get_context("spawn")
+    pool = ctx.Pool(processes=procs, initializer=_worker_init, initargs=(payload,))
+    try:
+        # chunksize=1 so one pathological molecule takes down one task rather
+        # than the whole chunk it was batched into
+        it = pool.imap_unordered(_convert_one, tasks, chunksize=1)
+        while True:
+            try:
+                idx, smi, lr = it.next(timeout=timeout)
+            except StopIteration:
+                break
+            except _mp.TimeoutError:
+                print(f"[convert{tag}] no completion for {timeout}s with "
+                      f"{len(tasks) - done} outstanding; abandoning them to a "
+                      f"wedged worker and moving on", flush=True)
+                break
+            smis[idx] = smi
+            logrs[idx] = lr
+            done += 1
+            # also print the final tally: with a fixed stride the last partial
+            # batch prints nothing, so a healthy run goes silent for its last
+            # few hundred molecules and looks exactly like a stall
+            if progress_every and (done % progress_every == 0
+                                   or done == len(tasks)):
+                print(f"[convert{tag}]   {done}/{len(tasks)} scored+converted",
+                      flush=True)
+            if done == len(tasks):
+                break
+    finally:
+        pool.terminate()
+        pool.join()
+    return smis, logrs, len(tasks) - done
+
+
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -226,6 +390,9 @@ def _load_base_from(args, summary, keep, lit):
         "n_valid_smiles": len(smiles),
         "parse_rate": None,
         "n_parse_fail": None,
+        "n_size_skipped": None,
+        "n_conv_lost": None,
+        "max_atoms": None,
         "uniqueness": (len(set(smiles)) / len(smiles)) if smiles else 0.0,
         "log_reward_mean": float(valid_logr.mean()) if len(valid_logr) else None,
         "log_reward_top1": float(np.max(valid_logr)) if len(valid_logr) else None,
@@ -259,6 +426,32 @@ def main():
     ap.add_argument("--ref_limit", type=int, default=10000,
                     help="cap reference SMILES loaded (FCD is fine with ~10k)")
     ap.add_argument("--dataset", default="geom")
+    # Bond perception from 3D coordinates searches over bond orders and charges,
+    # and the cost grows sharply with size. A dense or oversized geometry can
+    # wedge rdDetermineBonds inside a C++ extension, where no Python-level
+    # timeout can reach it, and stall the whole dump. This short-circuits before
+    # the call. Measured over the 1.03M molecules dumped so far, a cap of 120
+    # excludes ~0.002% of the converted set (p99.9 is 83 atoms), so it costs
+    # roughly nothing; `n_size_skipped` records the exact count per dump so the
+    # loss is reportable rather than assumed. 0 disables the cap.
+    ap.add_argument("--max_atoms", type=int, default=120,
+                    help="skip 3D->SMILES conversion above this atom count "
+                         "(counted to the first STOP); 0 disables")
+    # The conversion is the dump's bottleneck and is embarrassingly parallel.
+    # conv_procs x DUMP_PARALLEL should stay at or under the vCPU count: on a
+    # 16-vCPU box, 8 workers with two concurrent dumps saturates it.
+    ap.add_argument("--conv_procs", type=int, default=0,
+                    help="worker processes for 3D->SMILES; 0 = auto "
+                         "(half the vCPUs), 1 = serial, no pool")
+    # This is silence across EVERY worker, not a per-molecule budget. A healthy
+    # molecule converts in milliseconds and a full pool completes many per
+    # second, so total silence is unambiguous well before a minute. It is paid
+    # once per dump that has a wedged molecule, at the very end when the healthy
+    # workers have drained the queue, so an over-generous value is dead time
+    # multiplied by the number of dumps.
+    ap.add_argument("--conv_timeout", type=float, default=90.0,
+                    help="seconds with NO conversion completing anywhere before "
+                         "the outstanding molecules are written off as wedged")
     ap.add_argument("--skip_base", action="store_true")
     ap.add_argument("--skip_guided", action="store_true")
     ap.add_argument("--base_from", default=None,
@@ -282,6 +475,7 @@ def main():
 
     import gflow
     from gflow import LitGFlowNet, mol_to_rdkit
+    from hang_guard import default_n_atoms
     from rdkit import Chem
 
     print(f"[load] {args.ckpt} (seed={args.seed})")
@@ -408,31 +602,85 @@ def main():
         if args.progress:
             print(f"[{source_name}] generation done ({len(mols)} mols); scoring reward ...",
                   flush=True)
-        logr = lit.compute_log_reward(mols).cpu().numpy()
+        # ---- size cap, before anything expensive -------------------------
+        # Counted separately from n_parse_fail: "too large to attempt" and
+        # "attempted and failed" are different populations, and only the first
+        # is a choice this script made.
+        n_size_skipped = 0
+        todo_idx, todo_mols = [], []
+        for _i, m in enumerate(mols):
+            if args.max_atoms > 0:
+                try:
+                    if default_n_atoms(m) > args.max_atoms:
+                        n_size_skipped += 1
+                        continue
+                except Exception:
+                    pass          # unrecognised molecule type: convert as before
+            todo_idx.append(_i); todo_mols.append(m)
+        todo_set = set(todo_idx)
 
-        if args.progress:
-            print(f"[{source_name}] converting 3D->2D + SMILES over {len(mols)} mols ...",
-                  flush=True)
+        # ---- score + convert, in ONE bond-perception pass -----------------
+        # These used to be two passes: compute_log_reward ran mol_to_rdkit over
+        # every molecule to score it, then this loop ran mol_to_rdkit again to
+        # record the SMILES. For a GuacaMol reward that was the dump's single
+        # largest cost, paid twice.
+        floor = float(getattr(lit.cfg, "invalid_logr", -5.0))
+        procs = args.conv_procs or max(1, (os.cpu_count() or 4) // 2)
+        prog = args.progress_every if args.progress else 0
+        n_conv_lost = 0
+        if procs > 1 and len(todo_mols) > 1:
+            if args.progress:
+                print(f"[{source_name}] scoring + converting {len(todo_mols)} "
+                      f"mols across {procs} workers ...", flush=True)
+            sub_smi, sub_lr, n_conv_lost = _convert_parallel(
+                todo_mols, reward_payload(lit.cfg), procs, args.conv_timeout,
+                progress_every=prog, tag=f" {source_name}")
+        else:
+            # serial fallback (--conv_procs 1): the original two-pass path,
+            # kept verbatim so a comparison run is always available
+            if args.progress:
+                print(f"[{source_name}] scoring reward (serial) ...", flush=True)
+            sub_lr = [float(v) for v in
+                      lit.compute_log_reward(todo_mols).cpu().numpy()]
+            sub_smi = []
+            for _k, m in enumerate(todo_mols):
+                if prog and _k > 0 and _k % prog == 0:
+                    print(f"[{source_name}]   processed {_k}/{len(todo_mols)}",
+                          flush=True)
+                rd = mol_to_rdkit(m)
+                if rd is None:
+                    sub_smi.append(None); continue
+                try:
+                    sub_smi.append(Chem.MolToSmiles(Chem.RemoveHs(rd)) or None)
+                except Exception:
+                    sub_smi.append(None)
+
+        # ---- reassemble in GENERATION order ------------------------------
+        # The harvest reads generation order to compute AUC at an oracle
+        # budget, so the surviving molecules must keep their original sequence.
+        # A molecule skipped by the size cap keeps the invalid floor, the same
+        # value an unparseable one gets, and is recorded in n_size_skipped.
+        smi_by_idx = [None] * len(mols)
+        logr = np.full(len(mols), floor, dtype=np.float32)
+        for _j, _i in enumerate(todo_idx):
+            smi_by_idx[_i] = sub_smi[_j]
+            logr[_i] = sub_lr[_j]
+
         smiles, valid_logr = [], []
-        n_parse_fail = 0
-        for _i, (m, lr) in enumerate(zip(mols, logr)):
-            if args.progress and _i > 0 and _i % args.progress_every == 0:
-                print(f"[{source_name}]   processed {_i}/{len(mols)} "
-                      f"(valid so far: {len(smiles)})", flush=True)
-            rd = mol_to_rdkit(m)
-            if rd is None:
-                n_parse_fail += 1
-                continue
-            try:
-                smi = Chem.MolToSmiles(Chem.RemoveHs(rd))
-            except Exception:
-                n_parse_fail += 1
-                continue
+        n_attempted_fail = 0
+        for _i, lr in enumerate(logr):
+            smi = smi_by_idx[_i]
             if smi:
                 smiles.append(smi)
                 valid_logr.append(float(lr))
                 all_rows.append({"source": source_name, "smiles": smi,
                                  "log_reward": float(lr)})
+            elif _i in todo_set:
+                n_attempted_fail += 1
+        # a molecule the pool never returned is "lost", not "failed": it was
+        # never scored, so folding it into n_parse_fail would misreport bond
+        # perception as the cause.
+        n_parse_fail = n_attempted_fail - n_conv_lost
         valid_logr = np.array(valid_logr)
 
         with open(os.path.join(args.out_dir, f"{source_name}_smiles.txt"), "w") as f:
@@ -453,6 +701,9 @@ def main():
             "n_valid_smiles": len(smiles),
             "parse_rate": parse_rate,
             "n_parse_fail": n_parse_fail,
+            "n_size_skipped": n_size_skipped,
+            "n_conv_lost": n_conv_lost,
+            "max_atoms": args.max_atoms,
             "uniqueness": (len(set(smiles)) / len(smiles)) if smiles else 0.0,
             "log_reward_mean": float(valid_logr.mean()) if len(valid_logr) else None,
             "log_reward_top1": float(np.max(valid_logr)) if len(valid_logr) else None,

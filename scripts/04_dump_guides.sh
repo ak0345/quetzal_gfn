@@ -42,6 +42,14 @@ DIFF_STEPS="${DIFF_STEPS:-18}"
 REF_LIMIT="${REF_LIMIT:-$N}"
 DATASET="${DATASET:-geom}"
 GUIDE_SOURCE="${GUIDE_SOURCE:-ema}"
+# Worker processes for the 3D->SMILES conversion, which is the dump's
+# bottleneck and is CPU-bound and single-threaded without this. Keep
+# CONV_PROCS x MAX_PARALLEL at or under the vCPU count. CONV_TIMEOUT is the
+# silence interval after which the remaining molecules are written off to a
+# worker wedged inside rdDetermineBonds, where no Python timeout can reach.
+CONV_PROCS="${CONV_PROCS:-8}"
+CONV_TIMEOUT="${CONV_TIMEOUT:-90}"
+CONV_ARGS="--conv_procs ${CONV_PROCS} --conv_timeout ${CONV_TIMEOUT}"
 MAIN_LOG="${MAIN_LOG:-${LOG_ROOT}/dump_master.log}"
 : > "$MAIN_LOG"
 
@@ -120,7 +128,7 @@ for name in "${CKPT_NAMES[@]}"; do
     GPU=$(( RAN % NUM_GPUS ))
     CMD="CUDA_VISIBLE_DEVICES=${GPU} $PY final_dump.py \
       --ckpt ${CKPT} --n ${N} --seed ${seed} --skip_guided \
-      --diff_steps ${DIFF_STEPS} --dataset ${DATASET} --progress \
+      --diff_steps ${DIFF_STEPS} --dataset ${DATASET} --progress ${CONV_ARGS} \
       ${REF_ARG} --out_dir ${OUT}"
     [[ "$DRY" == "1" ]] && { echo "[base] ${fam} s${seed}: $CMD"; continue; }
     launch "BASE|${fam}|s${seed}" "$OUT" "$CMD"
@@ -151,7 +159,7 @@ for name in "${CKPT_NAMES[@]}"; do
     GPU=$(( RAN % NUM_GPUS ))
     CMD="CUDA_VISIBLE_DEVICES=${GPU} $PY final_dump.py \
       --ckpt ${CKPT} --n ${N} --seed ${seed} --guide_source ${GUIDE_SOURCE} \
-      --diff_steps ${DIFF_STEPS} --dataset ${DATASET} --progress \
+      --diff_steps ${DIFF_STEPS} --dataset ${DATASET} --progress ${CONV_ARGS} \
       ${BASE_ARG} ${REF_ARG} --out_dir ${OUT}"
     [[ "$DRY" == "1" ]] && { echo "[run] $name s${seed}: $CMD"; continue; }
     launch "${name}|s${seed}" "$OUT" "$CMD"
