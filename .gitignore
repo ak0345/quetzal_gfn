@@ -27,5 +27,6 @@ __pycache__/
 .DS_Store
 aws
 paper
-Claude.md
+CLAUDE.md
 .gitignore
+.claude/
