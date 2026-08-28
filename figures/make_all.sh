@@ -58,6 +58,11 @@ run fig11 make_fig11_collapse_panel.py
 run fig12 make_fig12_mpo_components.py
 run fig13 make_fig13_sample_efficiency.py
 run fig14 make_fig14_quality_vs_score.py
+run make_fig15_chemspace.py --family osim
+run make_fig15_chemspace.py --family peri
+run make_fig15_chemspace.py --family fexo
+run make_fig15_chemspace.py --family nitrogen
+run make_fig15_chemspace.py --family zaleplon
 
 # the PMO comparison writes a LaTeX table as well as a figure
 printf '%-6s %-34s ' "pmo" "make_table_pmo.py"

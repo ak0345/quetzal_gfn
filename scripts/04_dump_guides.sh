@@ -37,7 +37,7 @@ warn_missing_ref
 
 OUT_ROOT="${OUT_ROOT:-${RESULTS_ROOT}/dumps}"
 N="${N:-5000}"
-SEEDS="${SEEDS:-0 42 100}"
+SEEDS_="${SEEDS_:-0}"
 DIFF_STEPS="${DIFF_STEPS:-18}"
 REF_LIMIT="${REF_LIMIT:-$N}"
 DATASET="${DATASET:-geom}"
@@ -68,7 +68,7 @@ if [[ ${#CKPT_NAMES[@]} -eq 0 ]]; then
   echo "        run scripts/01_train_guides.sh first" >&2
   exit 1
 fi
-say "${#CKPT_NAMES[@]} checkpoints x $(echo "$SEEDS" | wc -w) seeds -> $OUT_ROOT" | tee -a "$MAIN_LOG"
+say "${#CKPT_NAMES[@]} checkpoints x $(echo "$SEEDS_" | wc -w) seeds -> $OUT_ROOT" | tee -a "$MAIN_LOG"
 
 RAN=0; SKIPPED=0; MISSING=0
 START_TS=$(date +%s)
@@ -115,7 +115,7 @@ SEEN=" "
 
 for name in "${CKPT_NAMES[@]}"; do
   fam=$(reward_family "$name")
-  for seed in $SEEDS; do
+  for seed in $SEEDS_; do
     key="${fam},${seed}"
     [[ "$SEEN" == *" ${key} "* ]] && continue
     SEEN="${SEEN}${key} "
@@ -142,7 +142,7 @@ say "PHASE 2 -- every checkpoint, reusing the matching base dump" | tee -a "$MAI
 for name in "${CKPT_NAMES[@]}"; do
   CKPT=$(resolve_ckpt "$name") || { echo "[MISSING] $name"; MISSING=$((MISSING+1)); continue; }
   fam=$(reward_family "$name")
-  for seed in $SEEDS; do
+  for seed in $SEEDS_; do
     OUT="${OUT_ROOT}/${name}/seed${seed}"
     if [[ -f "${OUT}/dump_summary.json" ]]; then
       echo "[skip] $name seed$seed"; SKIPPED=$((SKIPPED+1)); continue
