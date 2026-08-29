@@ -28,5 +28,7 @@ __pycache__/
 aws
 papers/
 CLAUDE.md
-.gitignore
 .claude/
+
+
+.gitignore

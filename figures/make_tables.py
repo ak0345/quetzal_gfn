@@ -103,8 +103,14 @@ def skip(name, why):
 
 
 # ------------------------------------------------------------- 1. landscape
-def tab_landscape(out_dir, exclude=("zaleplon",)):
-    """Per benchmark: each guide family's score band, the prior, the baselines."""
+def tab_landscape(out_dir, exclude=("zaleplon",), ref_budget=5000):
+    """Per benchmark: each guide family's score band, the prior, the baselines.
+
+    ref_budget=5000 by default: matches the guide and frozen-prior sample size
+    (see scripts/04_dump_guides.sh, final_dump.py --n). Passing 10000 reproduces
+    the earlier, unmatched comparison this table used before 2026-08-28 -- kept
+    as an option only for reproducing that old table, not a recommended default.
+    """
     try:
         rows = fs.load_master_table()
     except SystemExit:
@@ -138,7 +144,7 @@ def tab_landscape(out_dir, exclude=("zaleplon",)):
                 prior = fs.f(r.get("base_reward_top10_mean"))
                 if not np.isfinite(prior):
                     prior = fs.f(r.get("guided_reward_top10_mean"))
-        ref = (fs.load_reference(bench) or {}).get("top10")
+        ref = (fs.load_reference(bench, budget=ref_budget) or {}).get("top10")
         pub = fs.PUBLISHED.get(bench, {})
 
         body.append(rf"\multicolumn{{6}}{{l}}{{\emph{{{fs.BENCH_TITLE[bench]}}}}} \\")
@@ -158,7 +164,8 @@ def tab_landscape(out_dir, exclude=("zaleplon",)):
                         f"{len(allv)} & {fmt(np.mean(allv))} & {fmt(np.min(allv))} & "
                         f"{fmt(np.max(allv))} & {fmt(np.max(allv)-np.min(allv))} \\\\")
         if ref is not None:
-            body.append(f"\\quad GEOM best-of-10k & -- & {fmt(ref)} & -- & -- & -- \\\\")
+            ref_label = f"GEOM best-of-{ref_budget // 1000}k"
+            body.append(f"\\quad {ref_label} & -- & {fmt(ref)} & -- & -- & -- \\\\")
         for lab, v in pub.items():
             body.append(f"\\quad {esc(lab)} & -- & {fmt(v)} & -- & -- & -- \\\\")
         body.append(r"\addlinespace")
@@ -195,6 +202,309 @@ def tab_landscape(out_dir, exclude=("zaleplon",)):
         note=("Guides are reported as a final top-10 over i.i.d.\\ samples. "
               "Published baselines are constants from Brown et al.\\ (2019), "
               "not measurements made here. " + note2)))
+
+
+# ------------------------------------------------------------- 1b. guide MPO
+def _seed_groups(rows, reward_filter=None, beta_filter=None):
+    """Group guide-sweep rows by (reward, guide, objective, replay, beta),
+    pooling only over training seed. Returns {key: [row, ...]}."""
+    groups = collections.defaultdict(list)
+    for r in rows:
+        name = r.get("name", "")
+        if not name.startswith("sweep-"):
+            continue
+        bench = r.get("reward")
+        if reward_filter is not None and bench not in reward_filter:
+            continue
+        if beta_filter is not None and r.get("beta") not in beta_filter:
+            continue
+        key = (bench, r.get("guide"), r.get("objective"), r.get("replay"), r.get("beta"))
+        groups[key].append(r)
+    return groups
+
+
+def tab_guide_mpo(out_dir, beta="10", exclude=("zaleplon", "nitrogen")):
+    """Guide sweep on the MPO benchmarks at one beta, over training seeds.
+
+    Replaces a hand-typed table with no generating code that could not be reproduced
+    from results/dumps/_aggregate/master_table.csv and claimed three seeds where only
+    two (0, 42) exist (see decisions.md, 2026-08-29). Pools over seed only -- every
+    other axis (reward, guide, objective, replay) is its own row, so nothing is
+    silently averaged over that isn't named.
+    """
+    try:
+        rows = fs.load_master_table()
+    except SystemExit:
+        return skip("tab_guide_mpo", "no master_table.csv")
+
+    prior = {}
+    for r in rows:
+        if r.get("name", "").startswith("base_quetzal-"):
+            prior[r.get("reward")] = fs.f(r.get("base_reward_top10_mean"))
+
+    groups = _seed_groups(rows, beta_filter={beta})
+    groups = {k: v for k, v in groups.items() if k[0] not in exclude}
+    if not groups:
+        return skip("tab_guide_mpo", f"no guide-sweep rows at beta={beta}")
+
+    body = []
+    prior_note = []
+    for bench in sorted({k[0] for k in groups}):
+        p = prior.get(bench)
+        prior_note.append(f"{fs.BENCH_TITLE.get(bench, bench)}: {fmt(p, 4)}")
+    for key in sorted(groups):
+        bench, guide, obj, replay, _beta = key
+        vals = groups[key]
+        p = prior.get(bench)
+        deltas = np.array([
+            fs.f(r.get("guided_reward_top10_mean")) - p for r in vals
+            if np.isfinite(fs.f(r.get("guided_reward_top10_mean"))) and p is not None
+            and np.isfinite(p)
+        ])
+        n = len(deltas)
+        mean = deltas.mean() if n else float("nan")
+        std = deltas.std(ddof=1) if n > 1 else float("nan")
+        fcd = np.nanmean([fs.f(r.get("fcd_guided_vs_base_mean")) for r in vals])
+        uniq = np.nanmean([fs.f(r.get("guided_uniqueness_mean")) for r in vals])
+        parse = np.nanmean([fs.f(r.get("guided_parse_rate_mean")) for r in vals])
+        body.append(
+            f"{fs.BENCH_TITLE.get(bench, bench)} & {esc(guide)} & {esc(obj.upper())} & "
+            f"{esc(replay)} & {n} & ${mean:+.4f}$ & {fmt(std, 4)} & {fmt(fcd)} & "
+            f"{fmt(uniq)} & {fmt(parse)} \\\\")
+
+    write(out_dir, "tab_guide_mpo.tex", table(
+        body,
+        caption=(rf"Guide sweep on the MPO benchmarks at $\beta{{=}}{beta}$, mean over "
+                 r"$n$ training seeds ($n \le 2$: seeds $0$ and $42$; no third seed "
+                 r"exists in this sweep). $\Delta$top-10 is guided minus frozen prior "
+                 "on the benchmark's own scale; frozen prior top-10 is "
+                 + "; ".join(prior_note) + "."),
+        label="tab:app-guide-mpo",
+        colspec="lllrrrrrrr",
+        header=(r"Reward & Guide & Obj. & Replay & $n$ & $\Delta$top-10 & Std & "
+                r"FCD$_{g|b}$ & Uniq. & Parse \\"),
+        note=("Std is the sample standard deviation over the $n$ seeds shown; a row "
+              "with $n=1$ has no Std to report.")))
+
+
+def tab_nitrogen(out_dir, betas=("1", "10", "100")):
+    """Nitrogen control over training seeds, all beta.
+
+    Replaces a hand-typed table with no generating code whose Delta-top-10 for
+    hidden/DB/beta=10/replay-off (the paper's headline nitrogen-control number) did
+    not reproduce: seed 0 alone gives +0.532 (close to the +0.531 previously shown),
+    seed 42 gives +0.266, and the genuine two-seed mean is +0.399 (see decisions.md,
+    2026-08-29). This table reports the real two-seed mean and std throughout, not a
+    single seed presented as an average.
+    """
+    try:
+        rows = fs.load_master_table()
+    except SystemExit:
+        return skip("tab_nitrogen", "no master_table.csv")
+
+    prior_row = next((r for r in rows if r.get("name") == "base_quetzal-nitrogen"), None)
+    if prior_row is None:
+        return skip("tab_nitrogen", "no base_quetzal-nitrogen row")
+    prior_top10 = fs.f(prior_row.get("base_reward_top10_mean"))
+    prior_mean = fs.f(prior_row.get("base_reward_mean_mean"))
+
+    groups = _seed_groups(rows, reward_filter={"nitrogen"}, beta_filter=set(betas))
+    if not groups:
+        return skip("tab_nitrogen", "no nitrogen sweep rows")
+
+    rows_out = []
+    for key in sorted(groups):
+        bench, guide, obj, replay, beta = key
+        vals = groups[key]
+        deltas = np.array([
+            fs.f(r.get("guided_reward_top10_mean")) - prior_top10 for r in vals
+            if np.isfinite(fs.f(r.get("guided_reward_top10_mean")))
+        ])
+        n = len(deltas)
+        mean = deltas.mean() if n else float("nan")
+        std = deltas.std(ddof=1) if n > 1 else float("nan")
+        top10 = np.nanmean([fs.f(r.get("guided_reward_top10_mean")) for r in vals])
+        meanv = np.nanmean([fs.f(r.get("guided_reward_mean_mean")) for r in vals])
+        fcd = np.nanmean([fs.f(r.get("fcd_guided_vs_base_mean")) for r in vals])
+        if n == 0:
+            continue
+        rows_out.append((mean, guide, obj, beta, replay, n, mean, std, top10, meanv, fcd))
+
+    rows_out.sort(key=lambda t: -t[0])
+    body = []
+    for _, guide, obj, beta, replay, n, mean, std, top10, meanv, fcd in rows_out:
+        body.append(
+            f"{esc(guide)} & {esc(obj.upper())} & {beta} & {esc(replay)} & {n} & "
+            f"${mean:+.4f}$ & {fmt(std, 4)} & {fmt(top10)} & {fmt(meanv)} & {fmt(fcd)} \\\\")
+
+    write(out_dir, "tab_nitrogen.tex", table(
+        body,
+        caption=(r"Nitrogen control, mean over $n$ training seeds ($n \le 2$: seeds "
+                 r"$0$ and $42$; no third seed exists). The frozen prior scores "
+                 f"{fmt(prior_top10, 4)} (top-10) and {fmt(prior_mean, 4)} (mean). "
+                 r"$\Delta$ is guided minus frozen prior."),
+        label="tab:app-nitrogen",
+        colspec="llllrrrrrr",
+        header=(r"Guide & Obj. & $\beta$ & Replay & $n$ & $\Delta$top-10 & Std & "
+                r"Top-10 & Mean & FCD$_{g|b}$ \\"),
+        note=("Std is the sample standard deviation over the $n$ seeds shown; a row "
+              "with $n=1$ has no Std to report. Sorted by $\\Delta$top-10, "
+              "descending.")))
+
+
+def tab_discriminator(out_dir, exclude=("zaleplon",)):
+    """Best Delta-top-10 by reward, over every guide/objective/beta/replay cell.
+
+    Replaces a hand-typed table with no generating code (see decisions.md,
+    2026-08-29): the per-benchmark best-Delta and scored-fraction figures it showed
+    did not match a direct recomputation from results/dumps/_aggregate/master_table.csv
+    for any of the three MPO benchmarks. Pools over training seed within each
+    (guide, objective, beta, replay) cell, as tab_guide_mpo/tab_nitrogen do, then
+    takes the best seed-pooled mean per reward.
+    """
+    try:
+        rows = fs.load_master_table()
+    except SystemExit:
+        return skip("tab_discriminator", "no master_table.csv")
+
+    rewards = [b for b in list(fs.ALL_BENCHES) + ["nitrogen"] if b not in exclude]
+    structure = {b: "multi-property" for b in fs.ALL_BENCHES}
+    structure["nitrogen"] = "atom-decomposable"
+    title = dict(fs.BENCH_TITLE, nitrogen="Nitrogen fraction")
+
+    prior = {}
+    for r in rows:
+        if r.get("name", "").startswith("base_quetzal-"):
+            prior[r.get("reward")] = fs.f(r.get("base_reward_top10_mean"))
+
+    groups = _seed_groups(rows)
+    body = []
+    for bench in rewards:
+        p = prior.get(bench)
+        if p is None or not np.isfinite(p):
+            continue
+        best = None
+        for key, vals in groups.items():
+            if key[0] != bench:
+                continue
+            deltas = np.array([
+                fs.f(r.get("guided_reward_top10_mean")) - p for r in vals
+                if np.isfinite(fs.f(r.get("guided_reward_top10_mean")))
+            ])
+            if len(deltas) == 0:
+                continue
+            m = deltas.mean()
+            if best is None or m > best:
+                best = m
+        parse = [fs.f(r.get("guided_parse_rate_mean")) for r in rows
+                 if r.get("name", "").startswith("sweep-") and r.get("reward") == bench
+                 and np.isfinite(fs.f(r.get("guided_parse_rate_mean")))]
+        scored = (f"{min(parse):.2f}--{max(parse):.2f}" if parse else "--")
+        if best is None:
+            continue
+        body.append(f"{title.get(bench, bench)} & {scored} & "
+                     f"${best:+.3f}$ & {esc(structure.get(bench, '--'))} \\\\")
+
+    if not body:
+        return skip("tab_discriminator", "nothing to tabulate")
+
+    write(out_dir, "tab_discriminator.tex", table(
+        body,
+        caption=("Best $\\Delta$top-10 by reward, over every guide architecture, "
+                 "objective, $\\beta$ and replay setting, pooled over training seed "
+                 "within each cell. Scored fraction is the range of the guided "
+                 "parse rate (fraction of generated molecules that convert to a "
+                 "scoreable SMILES) across the sweep."),
+        label="tab:app-discriminator",
+        colspec="lrrl",
+        header=r"Reward & Scored fraction & Best $\Delta$top-10 & Structure \\"))
+
+
+# -------------------------------------------------------------- 1c. delivery
+def tab_delivery(out_dir, betas=("1", "10"), exclude=("zaleplon",)):
+    """Delivery rate, TV, sampled-flip rate and the margin ceiling, pooled per guide.
+
+    Backs the Results-section sentences that report these headline diagnostics. Pools
+    raw counts (not per-run rates) over every flip report at beta in `betas`, weighted
+    by n_states, so a run of 400 states does not weigh as much as one of 40,000 -- the
+    same convention tab_flip() uses for the by-position curves. Restricted to
+    beta in {1, 10} (the balanced grid): the temperature-gain guide has no beta=100
+    runs by design, and folding beta=100 into base/hidden here roughly doubles their
+    flip rates relative to the beta<=10 numbers this table reports, since beta=100 is
+    a stress test meant to push harder, not part of the balanced comparison.
+    """
+    try:
+        reports = fs.load_flip_reports(fs.FLIPS_DIR, "1.0")
+    except SystemExit:
+        return skip("tab_delivery", "no flip reports")
+
+    import re
+    agg = collections.defaultdict(collections.Counter)
+    n_states = collections.Counter()
+    n_cfg = collections.Counter()
+    keys = ["delivered", "sample_flip", "argmax_flip", "mass_moved_sum",
+            "gap_hi_states", "gap_hi_flipped", "gap_lo_states", "gap_lo_flipped",
+            "prior_top1_logit_gap_sum"]
+    for label, (_full, blk) in reports.items():
+        if any(x in label for x in exclude):
+            continue
+        fam = fs.guide_family(label)
+        if fam is None:
+            continue
+        m = re.search(r"-b(\d+)(?:-s\d+)?$", label)
+        if m is None or m.group(1) not in betas:
+            continue
+        n = blk.get("n_states", 0)
+        raw = blk.get("raw", {})
+        n_states[fam] += n
+        n_cfg[fam] += 1
+        for k in keys:
+            agg[fam][k] += raw.get(k, 0)
+
+    fams = [f for f in ("guide: base", "guide: hidden", "guide: tempgain") if n_states[f]]
+    if not fams:
+        return skip("tab_delivery", "no matching flip reports")
+
+    overall = collections.Counter()
+    for fam in fams:
+        for k in agg[fam]:
+            overall[k] += agg[fam][k]
+    tot = sum(n_states[f] for f in fams)
+
+    short = {"guide: base": "base", "guide: hidden": "hidden", "guide: tempgain": "tempgain"}
+
+    def row(label, n, a):
+        hi_flip = a["gap_hi_flipped"] / a["gap_hi_states"] if a["gap_hi_states"] else float("nan")
+        lo_flip = a["gap_lo_flipped"] / a["gap_lo_states"] if a["gap_lo_states"] else float("nan")
+        return " & ".join([
+            label,
+            fmt(a["delivered"] / n, 3),
+            fmt(100 * a["sample_flip"] / n, 3),
+            fmt(100 * a["mass_moved_sum"] / n, 3),
+            fmt(a["prior_top1_logit_gap_sum"] / n, 2),
+            fmt(100 * a["gap_hi_states"] / n, 2),
+            fmt(100 * hi_flip, 4),
+            fmt(100 * lo_flip, 3)]) + r" \\"
+
+    body = [row(short[f], n_states[f], agg[f]) for f in fams]
+    body.append(r"\midrule")
+    body.append(row(r"\emph{pooled}", tot, overall))
+
+    write(out_dir, "tab_delivery.tex", table(
+        body,
+        caption=("Delivery rate, sampled-flip rate and the margin ceiling, pooled over "
+                 rf"the balanced grid ($\beta \in \{{{','.join(betas)}\}}$, both training "
+                 "objectives, both training seeds, replay on and off) by guide "
+                 "architecture. Sample flip is the coupled sampled-disagreement rate "
+                 "against the frozen prior; high/low-gap flip are the same rate "
+                 "restricted to decisions above/below a prior top-1 margin of 8."),
+        label="tab:delivery",
+        colspec="lrrrrrrr",
+        header=(r"Guide & Delivered & Sample flip \% & TV \% & Mean gap & "
+                r"High-gap frac \% & High-gap flip \% & Low-gap flip \% \\"),
+        note=(f"Pooled from raw per-state counts over {sum(n_cfg[f] for f in fams)} "
+              "guide configurations; a run of 400 states does not weigh as much as one "
+              "of 40{,}000. Zaleplon is excluded as a negative control.")))
 
 
 # --------------------------------------------------------------- 2. ceiling
@@ -525,12 +835,20 @@ def main():
     ap.add_argument("--temps", default="1.0,0.3")
     ap.add_argument("--sep_json", default=None,
                     help="optional JSON with the fig16/fig17 measurements")
+    ap.add_argument("--ref_budget", type=int, default=5000,
+                    help="GEOM-Drugs reference sample size for tab_landscape; "
+                         "5000 matches the guide/prior sample size, 10000 "
+                         "reproduces the earlier unmatched comparison")
     args = ap.parse_args()
 
     exclude = tuple(x for x in args.exclude.split(",") if x)
     temps = tuple(t.strip() for t in args.temps.split(",") if t.strip())
 
-    tab_landscape(args.out_dir, exclude)
+    tab_landscape(args.out_dir, exclude, ref_budget=args.ref_budget)
+    tab_guide_mpo(args.out_dir)
+    tab_nitrogen(args.out_dir)
+    tab_discriminator(args.out_dir, exclude=exclude)
+    tab_delivery(args.out_dir, exclude=exclude)
     tab_ceiling(args.out_dir)
     tab_flip(args.out_dir, temps, exclude=exclude)
     tab_scale(args.out_dir)
