@@ -1,12 +1,8 @@
-# Steerability Limits in Frozen 3D Molecular Priors
-
-Code and experiments for **A Characterization of Steerability Limits in Frozen 3D
-Molecular Priors** ([paper](paper/steerability-limits-frozen-3d-priors.pdf)).
+# When Does Atom-Level Guidance Steer a Frozen 3D Molecular Generator?
 
 We steer [Quetzal](https://arxiv.org/abs/2505.13791), an autoregressive 3D
 molecular model trained on GEOM-Drugs, toward GuacaMol MPO objectives across many
-configurations spanning three guide architectures, five training objectives and
-four fine-tuning scopes.
+configurations spanning three guide architectures, five training objectives.
 
 ---
 
